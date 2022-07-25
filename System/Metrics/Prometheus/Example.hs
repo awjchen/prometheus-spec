@@ -17,11 +17,17 @@ import qualified System.Metrics.Prometheus.Gauge as Gauge
 import System.Metrics.Prometheus
 
 -- Custom type describing a set of classes of metrics.
-data MyMetrics (name :: Symbol) (t :: MetricType) (labels :: Type) where
+data MyMetrics ::
+  Symbol -> -- Name
+  Symbol -> -- Help
+  MetricType ->
+  Type -> -- Labels
+  Type
+  where
   Requests ::
-    MyMetrics "requests" 'CounterType EndpointLabels
+    MyMetrics "requests" "" 'CounterType EndpointLabels
   DBConnections ::
-    MyMetrics "postgres.total_connections" 'GaugeType DataSourceLabels
+    MyMetrics "postgres.total_connections" "" 'GaugeType DataSourceLabels
 
 -- Custom label set
 newtype EndpointLabels = EndpointLabels { endpoint :: T.Text }

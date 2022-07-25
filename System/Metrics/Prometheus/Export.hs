@@ -49,7 +49,7 @@ module System.Metrics.Prometheus.Export
   , escapeLabelValue
   ) where
 
-import Data.Bifunctor (bimap, first)
+import Data.Bifunctor (bimap, first, second)
 import qualified Data.ByteString.Builder as B
 import Data.Char (isDigit)
 import qualified Data.HashMap.Strict as HM
@@ -65,6 +65,11 @@ import System.Metrics.Prometheus
   )
 import System.Metrics.Prometheus.Histogram
   ( HistogramSample (histBuckets, histCount, histSum)
+  )
+import System.Metrics.Prometheus.Internal.State
+  ( Help
+  , Labels
+  , Name
   )
 
 ------------------------------------------------------------------------------
@@ -100,25 +105,51 @@ import System.Metrics.Prometheus.Histogram
 --
 -- For example, a metrics sample consisting of
 --
--- (1) a metric named @100gauge@, with no labels, of type @Gauge@, with
--- value @100@;
--- (2) a metric named @my.counter@, with labels @{label.name.1="label value 1", label.name.2="label value 1"}@, of type
--- @Counter@, with value @10@;
--- (3) a metric named @my.counter@, with labels @{label.name.1="label value 2", label.name.2="label value 2"}@, of type
--- @Counter@, with value @11@;
--- (4) a metric named @my.histogram@, with labels @{label_name="label_value"}@, of type
--- @Histogram@, with bucket upper bounds of @[1, 2, 3]@, and
--- observations @[1, 2, 3, 4]@;
+-- (1) a metric
+--
+--      * named @100gauge@
+--      * with no labels
+--      * of type @Gauge@
+--      * with value @100@
+--      * with help text @"Example gauge"@
+--
+-- (2) a metric
+--
+--      * named @my.counter@
+--      * with labels @{label.name.1="label value 1", label.name.2="label value 1"}@
+--      * of type @Counter@
+--      * with value @10@
+--      * with help text @"Example counter"@
+--
+-- (3) a metric
+--
+--      * named @my.counter@
+--      * with labels @{label.name.1="label value 2", label.name.2="label value 2"}@
+--      * of type @Counter@
+--      * with value @11@
+--      * with help text @"Example counter"@
+--
+-- (4) a metric
+--
+--      * named @my.histogram@
+--      * with labels @{label_name="label_value"}@
+--      * of type @Histogram@
+--      * with bucket upper bounds of @[1, 2, 3]@
+--      * with observations @[1, 2, 3, 4]@
+--      * with help text @"Example histogram"@
 --
 -- is encoded as follows:
 --
+-- > # HELP _100gauge Example gauge
 -- > # TYPE _100gauge gauge
 -- > _100gauge 100.0
 -- >
+-- > # HELP my_counter Example counter
 -- > # TYPE my_counter counter
 -- > my_counter{label_name_2=\"label value 1\",label_name_1=\"label value 1\"} 10.0
 -- > my_counter{label_name_2=\"label value 2\",label_name_1=\"label value 2\"} 11.0
 -- >
+-- > # HELP my_histogram Example histogram
 -- > # TYPE my_histogram histogram
 -- > my_histogram_bucket{le=\"1.0\",label_name=\"label_value\"} 1
 -- > my_histogram_bucket{le=\"2.0\",label_name=\"label_value\"} 2
@@ -136,24 +167,17 @@ sampleToPrometheus =
         ( makeGroupedMetric
         . bimap
             sanitizeName
-            (map (first (HM.mapKeys sanitizeName)) . M.toAscList)
+            (second
+              (map (first (HM.mapKeys sanitizeName)) . M.toAscList))
         )
     . M.toAscList
-
-type Labels = HM.HashMap T.Text T.Text
 
 ------------------------------------------------------------------------------
 
 data GroupedMetric
-  = GroupedCounter
-      T.Text -- Metric name
-      [(Labels, Double)]
-  | GroupedGauge
-      T.Text -- Metric name
-      [(Labels, Double)]
-  | GroupedHistogram
-      T.Text -- Metric name
-      [(Labels, HistogramSample)]
+  = GroupedCounter Name Help [(Labels, Double)]
+  | GroupedGauge Name Help [(Labels, Double)]
+  | GroupedHistogram Name Help [(Labels, HistogramSample)]
 
 -- Within a sample, metrics with the name should have the same metric
 -- type, but this is not guaranteed. To handle the case where two
@@ -162,20 +186,20 @@ data GroupedMetric
 -- all the metrics of that name that do not have that type.
 --
 makeGroupedMetric ::
-  (T.Text, [(Labels, Value)]) -> Maybe GroupedMetric
-makeGroupedMetric (metricName, pairs@((_, headVal):_)) =
+  (Name, (Help, [(Labels, Value)])) -> Maybe GroupedMetric
+makeGroupedMetric (metricName, (help, pairs@((_, headVal):_))) =
   Just $
     case headVal of
       Counter _ ->
-        GroupedCounter metricName $
+        GroupedCounter metricName help $
           flip mapMaybe pairs $ \(tags, val) ->
             sequence (tags, getCounterValue val)
       Gauge _ ->
-        GroupedGauge metricName $
+        GroupedGauge metricName help $
           flip mapMaybe pairs $ \(tags, val) ->
             sequence (tags, getGaugeValue val)
       Histogram _ ->
-        GroupedHistogram metricName $
+        GroupedHistogram metricName help $
           flip mapMaybe pairs $ \(tags, val) ->
             sequence (tags, getHistogramValue val)
 makeGroupedMetric _ = Nothing
@@ -199,16 +223,17 @@ getHistogramValue = \case
 
 exportGroupedMetric :: GroupedMetric -> B.Builder
 exportGroupedMetric = \case
-  GroupedCounter metricName labelsAndValues ->
-    exportCounter metricName labelsAndValues
-  GroupedGauge metricName labelsAndValues ->
-    exportGauge metricName labelsAndValues
-  GroupedHistogram metricName labelsAndValues ->
-    exportHistogram metricName labelsAndValues
+  GroupedCounter metricName help labelsAndValues ->
+    exportCounter metricName help labelsAndValues
+  GroupedGauge metricName help labelsAndValues ->
+    exportGauge metricName help labelsAndValues
+  GroupedHistogram metricName help labelsAndValues ->
+    exportHistogram metricName help labelsAndValues
 
 -- Prometheus counter samples
-exportCounter :: T.Text -> [(Labels, Double)] -> B.Builder
-exportCounter metricName labelsAndValues =
+exportCounter :: Name -> Help -> [(Labels, Double)] -> B.Builder
+exportCounter metricName help labelsAndValues =
+  mappend (metricHelpLine metricName help) $
   mappend (metricTypeLine "counter" metricName) $
     foldMap
       (\(labels, value) ->
@@ -216,8 +241,9 @@ exportCounter metricName labelsAndValues =
       labelsAndValues
 
 -- Prometheus gauge samples
-exportGauge :: T.Text -> [(Labels, Double)] -> B.Builder
-exportGauge metricName labelsAndValues =
+exportGauge :: Name -> Help -> [(Labels, Double)] -> B.Builder
+exportGauge metricName help labelsAndValues =
+  mappend (metricHelpLine metricName help) $
   mappend (metricTypeLine "gauge" metricName) $
     foldMap
       (\(labels, value) ->
@@ -225,8 +251,10 @@ exportGauge metricName labelsAndValues =
       labelsAndValues
 
 -- Prometheus histogram samples
-exportHistogram :: T.Text -> [(Labels, HistogramSample)] -> B.Builder
-exportHistogram metricName labelsAndValues =
+exportHistogram ::
+  Name -> Help -> [(Labels, HistogramSample)] -> B.Builder
+exportHistogram metricName help labelsAndValues =
+  mappend (metricHelpLine metricName help) $
   mappend (metricTypeLine "histogram" metricName) $
     flip foldMap labelsAndValues $ \(labels, histSample) ->
       mconcat
@@ -257,6 +285,17 @@ exportHistogram metricName labelsAndValues =
     metricName_bucket = metricName <> "_bucket"
 
 ------------------------------------------------------------------------------
+
+-- Prometheus metric help line
+metricHelpLine :: T.Text -> T.Text -> B.Builder
+metricHelpLine metricName help
+  | T.null help = mempty
+  | otherwise =
+      "# HELP "
+        <> text metricName
+        <> B.charUtf8 ' '
+        <> text help
+        <> newline
 
 -- Prometheus metric type line
 metricTypeLine :: B.Builder -> T.Text -> B.Builder

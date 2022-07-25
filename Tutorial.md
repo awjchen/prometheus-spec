@@ -83,12 +83,13 @@ that specifies two metrics:
 ```haskell
 data AppMetrics1
   :: Symbol -- ^ Metric name
+  -> Symbol -- ^ Metric documentation
   -> MetricType -- ^ e.g. Counter, Gauge
   -> Type -- ^ Label set structure
   -> Type
   where
-  Requests :: AppMetrics1 "my_app.requests" 'CounterType ()
-  Connections :: AppMetrics1 "my_app.connections" 'GaugeType ()
+  Requests :: AppMetrics1 "my_app.requests" "" 'CounterType ()
+  Connections :: AppMetrics1 "my_app.connections" "" 'GaugeType ()
 ```
 
 The `AppMetrics1` GADT has two constructors, `Requests` and
@@ -135,8 +136,8 @@ app1 = do
 
   -- Verify the sample, just for this tutorial.
   let expectedSample = M.fromList
-        [ ("my_app.requests", M.singleton HM.empty (Counter 1))
-        , ("my_app.connections", M.singleton HM.empty (Gauge 99))
+        [ ("my_app.requests", ("", M.singleton HM.empty (Counter 1)))
+        , ("my_app.connections", ("", M.singleton HM.empty (Gauge 99)))
         ]
   assert (sample == expectedSample) $ pure ()
 ```
@@ -197,15 +198,16 @@ metrics:
 ```haskell
 data AppMetrics2
   :: Symbol
+  -> Symbol
   -> MetricType
   -> Type -- ^ Label set structure
   -> Type
   where
   -- (1)
   HTTPRequests ::
-    AppMetrics2 "requests" 'CounterType EndpointLabels
+    AppMetrics2 "requests" "" 'CounterType EndpointLabels
   DBConnections ::
-    AppMetrics2 "total_connections" 'GaugeType DataSourceLabels
+    AppMetrics2 "total_connections" "" 'GaugeType DataSourceLabels
 
 -- (2)
 newtype EndpointLabels = EndpointLabels { endpoint :: T.Text }
@@ -265,19 +267,23 @@ app2 = do
 
   let expectedSample = M.fromList
         [ ( "requests"
-          , M.fromList
-            [ (HM.singleton "endpoint" "dev/harpsichord", Counter 0)
-            , (HM.singleton "endpoint" "dev/tabla", Counter 1)
-            ]
+          , ( ""
+            , M.fromList
+                [ (HM.singleton "endpoint" "dev/harpsichord", Counter 0)
+                , (HM.singleton "endpoint" "dev/tabla", Counter 1)
+                ]
+            )
           )
         , ( "total_connections"
-          , M.singleton
-              ( HM.fromList
-                [ ("source_name", "myDB")
-                , ("conn_info", "localhost:5432")
-                ]
-              )
-              (Gauge 99)
+          , ( ""
+            , M.singleton
+                ( HM.fromList
+                  [ ("source_name", "myDB")
+                  , ("conn_info", "localhost:5432")
+                  ]
+                )
+                (Gauge 99)
+            )
           )
         ]
   assert (sample == expectedSample) $ pure ()
@@ -323,8 +329,8 @@ app3 = do
 
   sample1 <- sampleAll store
   let expectedSample1 = M.fromList
-        [ ("my_app.requests", M.singleton HM.empty (Counter 1))
-        , ("my_app.connections", M.singleton HM.empty (Gauge 99))
+        [ ("my_app.requests", ("", M.singleton HM.empty (Counter 1)))
+        , ("my_app.connections", ("", M.singleton HM.empty (Gauge 99)))
         ]
   assert (sample1 == expectedSample1) $ pure ()
 
@@ -336,8 +342,8 @@ app3 = do
 
   sample2 <- sampleAll store
   let expectedSample2 = M.fromList
-        [ ("my_app.requests", M.singleton HM.empty (Counter 1))
-        , ("my_app.connections", M.singleton HM.empty (Gauge 5))
+        [ ("my_app.requests", ("", M.singleton HM.empty (Counter 1)))
+        , ("my_app.connections", ("", M.singleton HM.empty (Gauge 5)))
         ]
   assert (sample2 == expectedSample2) $ pure ()
 
@@ -347,7 +353,7 @@ app3 = do
   sample3 <- sampleAll store
   let expectedSample3 =
         M.singleton "my_app.connections" $
-          M.singleton HM.empty (Gauge 5)
+          ("", M.singleton HM.empty (Gauge 5))
   assert (sample3 == expectedSample3) $ pure ()
 ```
 
@@ -372,11 +378,11 @@ specification (used by `registerGcMetrics`) as a part of another metrics
 specification:
 
 ```haskell
-data AppMetrics4 :: Symbol -> MetricType -> Type -> Type where
+data AppMetrics4 :: Symbol -> Symbol -> MetricType -> Type -> Type where
   -- (1)
   GcSubset ::
-    GcMetrics name metricType labels ->
-    AppMetrics4 name metricType labels
+    GcMetrics name help metricType labels ->
+    AppMetrics4 name help metricType labels
 
 app4 :: IO ()
 app4 = do
@@ -431,9 +437,9 @@ example program that does this:
 
 ```haskell
 -- (1)
-data GcMetrics' :: Symbol -> MetricType -> Type -> Type where
-  Gcs' :: GcMetrics' "rts.gcs" 'CounterType ()
-  MaxLiveBytes' :: GcMetrics' "rts.max_live_bytes" 'GaugeType ()
+data GcMetrics' :: Symbol -> Symbol -> MetricType -> Type -> Type where
+  Gcs' :: GcMetrics' "rts.gcs" "" 'CounterType ()
+  MaxLiveBytes' :: GcMetrics' "rts.max_live_bytes" "" 'GaugeType ()
 
 app5 :: IO ()
 app5 = do
@@ -494,19 +500,19 @@ removed or modified. Here is an example program that does this.
 
 ```haskell
 -- (1)
-data AppMetrics6 :: Symbol -> MetricType -> Type -> Type where
+data AppMetrics6 :: Symbol -> Symbol -> MetricType -> Type -> Type where
   DynamicSubset ::
-    DynamicMetrics name metricType labels ->
-    AppMetrics6 name metricType labels
+    DynamicMetrics name help metricType labels ->
+    AppMetrics6 name help metricType labels
   StaticSubset ::
-    StaticMetrics name metricType labels ->
-    AppMetrics6 name metricType labels
+    StaticMetrics name help metricType labels ->
+    AppMetrics6 name help metricType labels
 
-data StaticMetrics :: Symbol -> MetricType -> Type -> Type where
-  MyStaticMetric :: StaticMetrics "my_static_metric" 'CounterType ()
+data StaticMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
+  MyStaticMetric :: StaticMetrics "my_static_metric" "" 'CounterType ()
 
-data DynamicMetrics :: Symbol -> MetricType -> Type -> Type where
-  MyDynamicMetric :: DynamicMetrics "my_dynamic_metric" 'CounterType ()
+data DynamicMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
+  MyDynamicMetric :: DynamicMetrics "my_dynamic_metric" "" 'CounterType ()
 
 app6 :: IO ()
 app6 = do

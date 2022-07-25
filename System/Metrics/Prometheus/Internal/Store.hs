@@ -34,6 +34,9 @@ module System.Metrics.Prometheus.Internal.Store
 
       -- * Identifying metrics
     , Identifier (..)
+    , Name
+    , Labels
+    , Help
 
       -- * Registering metrics
       -- $registering
@@ -123,37 +126,42 @@ deregisterHandles handles stateRef =
 -- metric. The provided action to read the value must be thread-safe.
 -- Also see 'createCounter'.
 registerCounter :: Identifier -- ^ Counter identifier
+                -> Help -- ^ Metric documentation
                 -> IO Double  -- ^ Action to read the current metric value
                 -> Registration -- ^ Registration action
-registerCounter identifier sample =
-    registerGeneric identifier (CounterS sample)
+registerCounter identifier help sample =
+    registerGeneric identifier help (CounterS sample)
 
 -- | Register an integer-valued metric. The provided action to read
 -- the value must be thread-safe. Also see 'createGauge'.
 registerGauge :: Identifier -- ^ Gauge identifier
+              -> Help -- ^ Metric documentation
               -> IO Double  -- ^ Action to read the current metric value
               -> Registration -- ^ Registration action
-registerGauge identifier sample =
-    registerGeneric identifier (GaugeS sample)
+registerGauge identifier help sample =
+    registerGeneric identifier help (GaugeS sample)
 
 -- | Register a histogram metric. The provided action to read the value
 -- must be thread-safe. Also see 'createHistogram.
 registerHistogram :: Identifier -- ^ Histogram identifier
+                  -> Help -- ^ Metric documentation
                   -> IO HistogramSample -- ^ Action to read the current metric value
                   -> Registration -- ^ Registration action
-registerHistogram identifier sample =
-    registerGeneric identifier (HistogramS sample)
+registerHistogram identifier help sample =
+    registerGeneric identifier help (HistogramS sample)
 
 registerGeneric
   :: Identifier -- ^ Metric identifier
+  -> Help -- ^ Metric documentation
   -> MetricSampler -- ^ Sampling action
   -> Registration -- ^ Registration action
-registerGeneric identifier sample = Registration $ \state0 ->
-    let (state1, handle) = Internal.register identifier sample state0
+registerGeneric identifier help sample = Registration $ \state0 ->
+    let (state1, handle) =
+          Internal.register identifier help sample state0
     in  (state1, (:) handle)
 
 registerGroup
-    :: M.Map Name (M.Map Labels (a -> Value))
+    :: M.Map Name (Help, M.Map Labels (a -> Value))
         -- ^ Metric names and getter functions
     -> IO a -- ^ Action to sample the metric group
     -> Registration -- ^ Registration action
@@ -172,34 +180,37 @@ registerGroup getters cb = Registration $ \state0 ->
 
 -- | Create and register a zero-initialized counter.
 createCounter :: Identifier -- ^ Counter identifier
+              -> Help -- ^ Metric documentation
               -> Store      -- ^ Metric store
               -> IO Counter
-createCounter identifier store = do
+createCounter identifier help store = do
     counter <- Counter.new
     _ <- register store $
-          registerCounter identifier (Counter.read counter)
+          registerCounter identifier help (Counter.read counter)
     return counter
 
 -- | Create and register a zero-initialized gauge.
 createGauge :: Identifier -- ^ Gauge identifier
+            -> Help -- ^ Metric documentation
             -> Store      -- ^ Metric store
             -> IO Gauge
-createGauge identifier store = do
+createGauge identifier help store = do
     gauge <- Gauge.new
     _ <- register store $
-          registerGauge identifier (Gauge.read gauge)
+          registerGauge identifier help (Gauge.read gauge)
     return gauge
 
 -- | Create and register an empty histogram. The buckets of the
 -- histogram are fixed and defined by the given upper bounds.
 createHistogram :: [Histogram.UpperBound] -- ^ Upper bounds of buckets
                 -> Identifier -- ^ Histogram identifier
+                -> Help -- ^ Metric documentation
                 -> Store      -- ^ Metric store
                 -> IO Histogram
-createHistogram upperBounds identifier store = do
+createHistogram upperBounds identifier help store = do
     histogram <- Histogram.new upperBounds
     _ <- register store $
-          registerHistogram identifier (Histogram.read histogram)
+          registerHistogram identifier help (Histogram.read histogram)
     return histogram
 
 ------------------------------------------------------------------------

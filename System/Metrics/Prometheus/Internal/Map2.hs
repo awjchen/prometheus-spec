@@ -1,17 +1,15 @@
--- | Helper functions for maps of maps.
+{-# OPTIONS_HADDOCK hide #-}
+
+-- | Helper functions for working with maps of maps.
 module System.Metrics.Prometheus.Internal.Map2
     ( fromList
-    , insert
     , delete
     , nonEmptyMap
     , lookup
-    , member
-    , keys
     ) where
 
 import Data.List (foldl')
 import qualified Data.Map.Strict as M
-import Data.Maybe (isJust)
 import Prelude hiding (lookup)
 
 fromList :: (Ord k1, Ord k2) => [(k1, k2, a)] -> M.Map k1 (M.Map k2 a)
@@ -43,13 +41,3 @@ nonEmptyMap m
 lookup
   :: (Ord k1, Ord k2) => k1 -> k2 -> M.Map k1 (M.Map k2 a) -> Maybe a
 lookup k1 k2 m = M.lookup k1 m >>= M.lookup k2
-
-member ::
-  (Ord k1, Ord k2) => k1 -> k2 -> M.Map k1 (M.Map k2 a) -> Bool
-member k1 k2 m = isJust $ lookup k1 k2 m
-
-keys :: M.Map k1 (M.Map k2 a) -> [(k1, k2)]
-keys m1 = do
-  (k1, m2) <- M.toList m1
-  k2 <- M.keys m2
-  pure (k1, k2)

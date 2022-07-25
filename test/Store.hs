@@ -11,7 +11,7 @@ import qualified Data.HashMap.Strict as HM
 import Test.Hspec
 import Test.HUnit (assertEqual)
 
-import qualified System.Metrics.Prometheus.Internal.Map2 as M2
+import qualified System.Metrics.Prometheus.Internal.Sample as Sample
 import System.Metrics.Prometheus.Internal.Store
 
 tests :: Spec
@@ -33,15 +33,15 @@ smokeTest = do
 
   let counterIdentifier = Identifier "ccounter" mempty
       gaugeIdentifier = Identifier "cgauge" mempty
-  !_ <- createCounter counterIdentifier store
-  !_ <- createGauge gaugeIdentifier store
+  !_ <- createCounter counterIdentifier "" store
+  !_ <- createGauge gaugeIdentifier "" store
 
   deregistrationHandle <- register store $ mconcat
-    [ registerCounter (Identifier "rcounter" mempty) (pure 0)
-    , registerGauge (Identifier "rgauge" mempty) (pure 0)
-    , flip registerGroup (pure ()) $ M2.fromList
-        [ ("group", HM.singleton "gcounter" mempty, const (Counter 0))
-        , ("group", HM.singleton "ggauge" mempty, const (Gauge 0))
+    [ registerCounter (Identifier "rcounter" mempty) "" (pure 0)
+    , registerGauge (Identifier "rgauge" mempty) "" (pure 0)
+    , flip registerGroup (pure ()) $ Sample.fromList
+        [ ("group", HM.singleton "gcounter" mempty, "", const (Counter 0))
+        , ("group", HM.singleton "ggauge" mempty, "", const (Gauge 0))
         ]
     ]
 
