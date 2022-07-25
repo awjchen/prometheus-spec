@@ -43,6 +43,7 @@ library
     System.Metrics.Prometheus.Export
     System.Metrics.Prometheus.Gauge
     System.Metrics.Prometheus.Histogram
+    System.Metrics.Prometheus.Internal.Map2
     System.Metrics.Prometheus.Internal.State
     System.Metrics.Prometheus.Internal.Store
 

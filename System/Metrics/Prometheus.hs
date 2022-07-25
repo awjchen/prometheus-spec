@@ -92,7 +92,6 @@ module System.Metrics.Prometheus
 import Data.Coerce (coerce)
 import qualified Data.HashMap.Strict as HM
 import Data.Kind (Type)
-import qualified Data.Map.Strict as M
 import Data.Proxy
 import qualified Data.Text as T
 import GHC.Generics
@@ -102,6 +101,7 @@ import qualified System.Metrics.Prometheus.Counter as Counter
 import qualified System.Metrics.Prometheus.Gauge as Gauge
 import System.Metrics.Prometheus.Histogram (HistogramSample)
 import qualified System.Metrics.Prometheus.Histogram as Histogram
+import qualified System.Metrics.Prometheus.Internal.Map2 as M2
 import qualified System.Metrics.Prometheus.Internal.Store as Internal
 
 -- $overview
@@ -547,7 +547,12 @@ class RegisterGroup (xs :: [Type]) where
 -- | Base case
 instance RegisterGroup '[] where
   registerGroup_ getters SamplingGroup sample =
-    Registration $ Internal.registerGroup (M.fromList getters) sample
+    let getterMap =
+          M2.fromList $
+            flip map getters $
+              \(Internal.Identifier name labels, sampler) ->
+                (name, labels, sampler)
+     in Registration $ Internal.registerGroup getterMap sample
 
 -- | Inductive case
 instance

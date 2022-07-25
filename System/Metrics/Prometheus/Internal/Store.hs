@@ -153,7 +153,8 @@ registerGeneric identifier sample = Registration $ \state0 ->
     in  (state1, (:) handle)
 
 registerGroup
-    :: M.Map Identifier (a -> Value) -- ^ Metric names and getter functions
+    :: M.Map Name (M.Map Labels (a -> Value))
+        -- ^ Metric names and getter functions
     -> IO a -- ^ Action to sample the metric group
     -> Registration -- ^ Registration action
 registerGroup getters cb = Registration $ \state0 ->

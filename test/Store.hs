@@ -8,10 +8,10 @@ module Store
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (race)
 import qualified Data.HashMap.Strict as HM
-import qualified Data.Map.Strict as M
 import Test.Hspec
 import Test.HUnit (assertEqual)
 
+import qualified System.Metrics.Prometheus.Internal.Map2 as M2
 import System.Metrics.Prometheus.Internal.Store
 
 tests :: Spec
@@ -39,9 +39,9 @@ smokeTest = do
   deregistrationHandle <- register store $ mconcat
     [ registerCounter (Identifier "rcounter" mempty) (pure 0)
     , registerGauge (Identifier "rgauge" mempty) (pure 0)
-    , flip registerGroup (pure ()) $ M.fromList
-        [ (Identifier "group" (HM.singleton "gcounter" mempty), const (Counter 0))
-        , (Identifier "group" (HM.singleton "ggauge" mempty), const (Gauge 0))
+    , flip registerGroup (pure ()) $ M2.fromList
+        [ ("group", HM.singleton "gcounter" mempty, const (Counter 0))
+        , ("group", HM.singleton "ggauge" mempty, const (Gauge 0))
         ]
     ]
 

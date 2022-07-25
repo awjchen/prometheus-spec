@@ -135,8 +135,8 @@ app1 = do
 
   -- Verify the sample, just for this tutorial.
   let expectedSample = M.fromList
-        [ (Identifier "my_app.requests" HM.empty, Counter 1)
-        , (Identifier "my_app.connections" HM.empty, Gauge 99)
+        [ ("my_app.requests", M.singleton HM.empty (Counter 1))
+        , ("my_app.connections", M.singleton HM.empty (Gauge 99))
         ]
   assert (sample == expectedSample) $ pure ()
 ```
@@ -264,22 +264,20 @@ app2 = do
   sample <- sampleAll store
 
   let expectedSample = M.fromList
-        [ ( Identifier
-              { idName = "requests"
-              , idLabels = HM.singleton "endpoint" "dev/harpsichord" }
-          , Counter 0
+        [ ( "requests"
+          , M.fromList
+            [ (HM.singleton "endpoint" "dev/harpsichord", Counter 0)
+            , (HM.singleton "endpoint" "dev/tabla", Counter 1)
+            ]
           )
-        , ( Identifier
-              { idName = "requests"
-              , idLabels = HM.singleton "endpoint" "dev/tabla" }
-          , Counter 1
-          )
-        , ( Identifier
-              { idName = "total_connections"
-              , idLabels = HM.fromList
-                  [ ("source_name", "myDB")
-                  , ("conn_info", "localhost:5432") ] }
-          , Gauge 99
+        , ( "total_connections"
+          , M.singleton
+              ( HM.fromList
+                [ ("source_name", "myDB")
+                , ("conn_info", "localhost:5432")
+                ]
+              )
+              (Gauge 99)
           )
         ]
   assert (sample == expectedSample) $ pure ()
@@ -325,8 +323,8 @@ app3 = do
 
   sample1 <- sampleAll store
   let expectedSample1 = M.fromList
-        [ (Identifier "my_app.requests" HM.empty, Counter 1)
-        , (Identifier "my_app.connections" HM.empty, Gauge 99)
+        [ ("my_app.requests", M.singleton HM.empty (Counter 1))
+        , ("my_app.connections", M.singleton HM.empty (Gauge 99))
         ]
   assert (sample1 == expectedSample1) $ pure ()
 
@@ -338,8 +336,8 @@ app3 = do
 
   sample2 <- sampleAll store
   let expectedSample2 = M.fromList
-        [ (Identifier "my_app.requests" HM.empty, Counter 1)
-        , (Identifier "my_app.connections" HM.empty, Gauge 5)
+        [ ("my_app.requests", M.singleton HM.empty (Counter 1))
+        , ("my_app.connections", M.singleton HM.empty (Gauge 5))
         ]
   assert (sample2 == expectedSample2) $ pure ()
 
@@ -347,9 +345,9 @@ app3 = do
   deregistrationHandle -- (2)
 
   sample3 <- sampleAll store
-  let expectedSample3 = M.fromList
-        [ (Identifier "my_app.connections" HM.empty, Gauge 5)
-        ]
+  let expectedSample3 =
+        M.singleton "my_app.connections" $
+          M.singleton HM.empty (Gauge 5)
   assert (sample3 == expectedSample3) $ pure ()
 ```
 

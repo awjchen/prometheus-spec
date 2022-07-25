@@ -49,22 +49,18 @@ module System.Metrics.Prometheus.Export
   , escapeLabelValue
   ) where
 
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap, first)
 import qualified Data.ByteString.Builder as B
 import Data.Char (isDigit)
-import Data.Function (on)
 import qualified Data.HashMap.Strict as HM
 import Data.Int (Int64)
 import Data.List (intersperse)
-import Data.List.NonEmpty (NonEmpty ((:|)))
-import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as M
 import Data.Maybe (mapMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import System.Metrics.Prometheus
-  ( Identifier (Identifier, idName),
-    Sample,
+  ( Sample,
     Value (Counter, Gauge, Histogram),
   )
 import System.Metrics.Prometheus.Histogram
@@ -135,15 +131,13 @@ sampleToPrometheus :: Sample -> B.Builder
 sampleToPrometheus =
   mconcat
     . intersperse newline
-    . map
-        ( exportGroupedMetric
-        . makeGroupedMetric
-        . NonEmpty.map (first sanitizeIdentifier)
+    . map exportGroupedMetric
+    . mapMaybe
+        ( makeGroupedMetric
+        . bimap
+            sanitizeName
+            (map (first (HM.mapKeys sanitizeName)) . M.toAscList)
         )
-    -- Note: This use of 'groupBy' relies on the lexicographic ordering
-    -- defined on the 'Identifier' type, which considers the metric name
-    -- first.
-    . NonEmpty.groupBy ((==) `on` (idName . fst))
     . M.toAscList
 
 type Labels = HM.HashMap T.Text T.Text
@@ -167,23 +161,24 @@ data GroupedMetric
 -- choose, for each metric name, one of its metric types, and discard
 -- all the metrics of that name that do not have that type.
 --
-makeGroupedMetric :: NonEmpty (Identifier, Value) -> GroupedMetric
-makeGroupedMetric xs@((Identifier metricName _, headVal) :| _) =
-  case headVal of
-    Counter _ ->
-      GroupedCounter metricName $
-        flip mapMaybe xs_list $ \(Identifier _ labels, val) ->
-          sequence (labels, getCounterValue val)
-    Gauge _ ->
-      GroupedGauge metricName $
-        flip mapMaybe xs_list $ \(Identifier _ labels, val) ->
-          sequence (labels, getGaugeValue val)
-    Histogram _ ->
-      GroupedHistogram metricName $
-        flip mapMaybe xs_list $ \(Identifier _ labels, val) ->
-          sequence (labels, getHistogramValue val)
-  where
-    xs_list = NonEmpty.toList xs
+makeGroupedMetric ::
+  (T.Text, [(Labels, Value)]) -> Maybe GroupedMetric
+makeGroupedMetric (metricName, pairs@((_, headVal):_)) =
+  Just $
+    case headVal of
+      Counter _ ->
+        GroupedCounter metricName $
+          flip mapMaybe pairs $ \(tags, val) ->
+            sequence (tags, getCounterValue val)
+      Gauge _ ->
+        GroupedGauge metricName $
+          flip mapMaybe pairs $ \(tags, val) ->
+            sequence (tags, getGaugeValue val)
+      Histogram _ ->
+        GroupedHistogram metricName $
+          flip mapMaybe pairs $ \(tags, val) ->
+            sequence (tags, getHistogramValue val)
+makeGroupedMetric _ = Nothing
 
 getCounterValue :: Value -> Maybe Double
 getCounterValue = \case
@@ -307,14 +302,6 @@ labelPair (labelName, labelValue) =
 
 ------------------------------------------------------------------------------
 -- Input sanitization
-
--- | Adjust the metric and label names contained in an EKG metric
--- identifier so that they are valid Prometheus names.
-sanitizeIdentifier :: Identifier -> Identifier
-sanitizeIdentifier (Identifier metricName labels) =
-  let name' = sanitizeName metricName
-      labels' = HM.mapKeys sanitizeName labels
-  in  Identifier name' labels'
 
 -- | Adjust a string so that it is a valid Prometheus name:
 --

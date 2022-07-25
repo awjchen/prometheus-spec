@@ -21,6 +21,7 @@ import qualified Test.SmallCheck as SC
 import qualified Test.SmallCheck.Series as SC
 
 import System.Metrics.Prometheus.Internal.State
+import qualified System.Metrics.Prometheus.Internal.Map2 as M2
 
 ------------------------------------------------------------------------
 
@@ -77,9 +78,13 @@ defaultSample = Counter 0
 defaultGroupSample :: a -> Value
 defaultGroupSample = const defaultSample
 
-samplingGroups :: [M.Map Identifier (() -> Value)]
+samplingGroups :: [M.Map Name (M.Map Labels (() -> Value))]
 samplingGroups =
-  map (M.fromList . map (, defaultGroupSample)) identifierGroups
+  map
+    ( M2.fromList
+    . map (\(Identifier name labels) -> (name, labels, defaultGroupSample))
+    )
+    identifierGroups
 
 -- ** State operation representation
 
@@ -87,7 +92,7 @@ samplingGroups =
 -- actions.
 data TestStateOp
   = Register Identifier
-  | RegisterGroup (M.Map Identifier (() -> Value))
+  | RegisterGroup (M.Map Name (M.Map Labels (() -> Value)))
   | Deregister Identifier
 
 -- | Realize the state operations (using phony sampling actions).
@@ -164,7 +169,8 @@ prop_registerRegisters ops =
       value = Gauge x
       (state1, _handle) = register identifier1 sampler state0
       sampledState1 = unsafePerformIO $ sampleState state1
-  in  case M.lookup identifier1 (sampledStateMetrics sampledState1) of
+      Identifier name1 labels1 = identifier1
+  in  case M2.lookup name1 labels1 (sampledStateMetrics sampledState1) of
         Nothing -> False
         Just (e, _) -> case e of
           Right _ -> False
@@ -199,36 +205,46 @@ prop_registerGroupRegisters ops =
         map (const . Gauge &&& Gauge) $ iterate succ 99
       (state1, _handle1) =
         registerGroup
-          (M.fromList $ zip identifiers2 getters)
+          (makeSampleGroup $ zip identifiers2 getters)
           (pure ())
           state0
       sampledState1 = unsafePerformIO $ sampleState state1
       sampledStateMetrics1 = sampledStateMetrics sampledState1
       sampledStateGroups1 = sampledStateGroups sampledState1
-  in  flip all (zip identifiers2 values) $ \(identifier, value) ->
-        case M.lookup identifier sampledStateMetrics1 of
-          Nothing -> False
-          Just (e, _) -> case e of
-            Left _ -> False
-            Right groupId ->
-              case M.lookup groupId sampledStateGroups1 of
-                Nothing -> False
-                Just groups -> case M.lookup identifier groups of
+  in  flip all (zip identifiers2 values) $
+        \(Identifier name labels, value) ->
+          case M2.lookup name labels sampledStateMetrics1 of
+            Nothing -> False
+            Just (e, _) -> case e of
+              Left _ -> False
+              Right groupId ->
+                case M.lookup groupId sampledStateGroups1 of
                   Nothing -> False
-                  Just value' -> value == value'
+                  Just groups -> case M2.lookup name labels groups of
+                    Nothing -> False
+                    Just value' -> value == value'
 
 prop_registerGroupIdempotent :: [TestStateOp] -> Bool
 prop_registerGroupIdempotent ops =
   let state0 = makeStateFromOps ops
       identifiers2 = take 2 identifiers
       getters = map (const . Gauge) $ iterate succ 99
-      sampleGroup = M.fromList $ zip identifiers2 getters
+      sampleGroup = makeSampleGroup $ zip identifiers2 getters
       sampler = pure ()
       (state1, _handle1) = registerGroup sampleGroup sampler state0
       (state2, _handle2) = registerGroup sampleGroup sampler state1
       sampledState1 = unsafePerformIO $ sampleState state1
       sampledState2 = unsafePerformIO $ sampleState state2
   in  functionallyEqual sampledState1 sampledState2
+
+makeSampleGroup ::
+  [(Identifier, a -> Value)] ->
+  M.Map Name (M.Map Labels (a -> Value))
+makeSampleGroup xs =
+  M2.fromList $
+    flip map xs $
+      \(Identifier name labels, getter) ->
+        (name, labels, getter)
 
 ------------------------------------------------------------------------
 -- * Deregister
@@ -249,7 +265,8 @@ prop_deregisterDeregisters ops =
             register identifier1 (GaugeS (pure 99)) initialState
       state1 = deregister identifier1 state0
       sampledState1 = unsafePerformIO $ sampleState state1
-  in  not $ M.member identifier1 $ sampledStateMetrics sampledState1
+      Identifier name1 labels1 = identifier1
+  in  not $ M2.member name1 labels1 $ sampledStateMetrics sampledState1
 
 prop_deregisterIdempotent :: [TestStateOp] -> Bool
 prop_deregisterIdempotent ops =
@@ -281,7 +298,8 @@ prop_handleDeregisters ops =
         register identifier1 (GaugeS (pure 99)) state0
       state2 = deregisterByHandle handle1 state1
       sampledState2 = unsafePerformIO $ sampleState state2
-  in  not $ M.member identifier1 $ sampledStateMetrics sampledState2
+      Identifier name1 labels1 = identifier1
+  in  not $ M2.member name1 labels1 $ sampledStateMetrics sampledState2
 
 prop_handleSpecificity :: [TestStateOp] -> Bool
 prop_handleSpecificity ops =
