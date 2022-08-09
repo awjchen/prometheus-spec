@@ -63,6 +63,7 @@ module System.Metrics.Prometheus
     -- $registering
   , register
   , Registration
+  , ValidationError (..)
   , registerCounter
   , registerGauge
   , registerHistogram
@@ -105,6 +106,7 @@ import System.Metrics.Prometheus.Histogram (HistogramSample)
 import qualified System.Metrics.Prometheus.Histogram as Histogram
 import qualified System.Metrics.Prometheus.Internal.Sample as Sample
 import qualified System.Metrics.Prometheus.Internal.Store as Internal
+import System.Metrics.Prometheus.Validation (ValidationError (..))
 
 -- $overview
 -- Metrics are used to monitor program behavior and performance. All
@@ -417,7 +419,9 @@ ofAll _ = Metric
 -- be deregistered if the handle is handle used.
 
 -- | Atomically register one or more metrics. Returns a handle for
--- atomically deregistering those metrics specifically.
+-- atomically deregistering those metrics specifically. Throws
+-- 'ValidationError' if the given registration contains any invalid
+-- metric or label names.
 register
   :: Store metrics -- ^ Metric store
   -> Registration metrics -- ^ Registration action
@@ -818,80 +822,80 @@ emptyGCDetails = Stats.GCDetails
 data GcMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
   Gcs ::
     GcMetrics
-      "rts.gcs"
+      "rts_gcs"
       "Total number of GCs"
       'CounterType
       ()
   MajorGcs ::
     GcMetrics
-      "rts.major_gcs"
+      "rts_major_gcs"
       "Total number of major (oldest generation) GCs"
       'CounterType
       ()
   AllocatedBytes ::
     GcMetrics
-      "rts.allocated_bytes"
+      "rts_allocated_bytes"
       "Total bytes allocated"
       'CounterType
       ()
   MaxLiveBytes ::
     GcMetrics
-      "rts.max_live_bytes"
+      "rts_max_live_bytes"
       "Maximum live data (including large objects + compact regions) in the heap. Updated after a major GC."
       'GaugeType
       ()
   MaxLargeObjectsBytes ::
     GcMetrics
-      "rts.max_large_objects_bytes"
+      "rts_max_large_objects_bytes"
       "Maximum live data in large objects"
       'GaugeType
       ()
   MaxCompactBytes ::
     GcMetrics
-      "rts.max_compact_bytes"
+      "rts_max_compact_bytes"
       "Maximum live data in compact regions"
       'GaugeType
       ()
   MaxSlopBytes ::
     GcMetrics
-      "rts.max_slop_bytes"
+      "rts_max_slop_bytes"
       "Maximum slop"
       'GaugeType
       ()
   MaxMemInUseBytes ::
     GcMetrics
-      "rts.max_mem_in_use_bytes"
+      "rts_max_mem_in_use_bytes"
       "Maximum memory in use by the RTS"
       'GaugeType
       ()
   CumulativeLiveBytes ::
     GcMetrics
-      "rts.cumulative_live_bytes"
+      "rts_cumulative_live_bytes"
       "Sum of live bytes across all major GCs. Divided by major_gcs gives the average live data over the lifetime of the program."
       'CounterType
       ()
   CopiedBytes ::
     GcMetrics
-      "rts.copied_bytes"
+      "rts_copied_bytes"
       "Sum of copied_bytes across all GCs"
       'CounterType
       ()
   ParCopiedBytes ::
     GcMetrics
-      "rts.par_copied_bytes"
+      "rts_par_copied_bytes"
       "Sum of copied_bytes across all parallel GCs"
       'GaugeType
       ()
   CumulativeParMaxCopiedBytes ::
     GcMetrics
-      "rts.cumulative_par_max_copied_bytes"
+      "rts_cumulative_par_max_copied_bytes"
       "Sum of par_max_copied_bytes across all parallel GCs. Deprecated."
       'GaugeType
       ()
 #if MIN_VERSION_base(4,11,0)
   CumulativeParBalancedCopiedBytes ::
     GcMetrics
-      "rts.cumulative_par_balanced_copied_bytes"
+      "rts_cumulative_par_balanced_copied_bytes"
       "Sum of par_balanced_copied bytes across all parallel GCs"
       'GaugeType
       ()
@@ -899,50 +903,50 @@ data GcMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
 #if MIN_VERSION_base(4,12,0)
   InitCpuNs ::
     GcMetrics
-      "rts.init_cpu_ns"
+      "rts_init_cpu_ns"
       "Total CPU time used by the init phase @since 4.12.0.0"
       'CounterType
       ()
   InitElapsedNs ::
     GcMetrics
-      "rts.init_elapsed_ns"
+      "rts_init_elapsed_ns"
       "Total elapsed time used by the init phase @since 4.12.0.0"
       'CounterType
       ()
 #endif
   MutatorCpuNs ::
     GcMetrics
-      "rts.mutator_cpu_ns"
+      "rts_mutator_cpu_ns"
       "Total CPU time used by the mutator"
       'CounterType
       ()
   MutatorElapsedNs ::
     GcMetrics
-      "rts.mutator_elapsed_ns"
+      "rts_mutator_elapsed_ns"
       "Total elapsed time used by the mutator"
       'CounterType
       ()
   GcCpuNs ::
     GcMetrics
-      "rts.gc_cpu_ns"
+      "rts_gc_cpu_ns"
       "Total CPU time used by the GC"
       'CounterType
       ()
   GcElapsedNs ::
     GcMetrics
-      "rts.gc_elapsed_ns"
+      "rts_gc_elapsed_ns"
       "Total elapsed time used by the GC"
       'CounterType
       ()
   CpuNs ::
     GcMetrics
-      "rts.cpu_ns"
+      "rts_cpu_ns"
       "Total CPU time (at the previous GC)"
       'CounterType
       ()
   ElapsedNs ::
     GcMetrics
-      "rts.elapsed_ns"
+      "rts_elapsed_ns"
       "Total elapsed time (at the previous GC)"
       'CounterType
       ()
@@ -988,87 +992,87 @@ data GcMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
   -- GCDetails
   GcDetailsGen ::
     GcMetrics
-      "rts.gc.gen"
+      "rts_gc_gen"
       "The generation number of this GC"
       'GaugeType
       ()
   GcDetailsThreads ::
     GcMetrics
-      "rts.gc.threads"
+      "rts_gc_threads"
       "Number of threads used in this GC"
       'GaugeType
       ()
   GcDetailsAllocatedBytes ::
     GcMetrics
-      "rts.gc.allocated_bytes"
+      "rts_gc_allocated_bytes"
       "Number of bytes allocated since the previous GC"
       'GaugeType
       ()
   GcDetailsLiveBytes ::
     GcMetrics
-      "rts.gc.live_bytes"
+      "rts_gc_live_bytes"
       "Total amount of live data in the heap (incliudes large + compact data). Updated after every GC. Data in uncollected generations (in minor GCs) are considered live."
       'GaugeType
       ()
   GcDetailsLargeObjectsBytes ::
     GcMetrics
-      "rts.gc.large_objects_bytes"
+      "rts_gc_large_objects_bytes"
       "Total amount of live data in large objects"
       'GaugeType
       ()
   GcDetailsCompactBytes ::
     GcMetrics
-      "rts.gc.compact_bytes"
+      "rts_gc_compact_bytes"
       "Total amount of live data in compact regions"
       'GaugeType
       ()
   GcDetailsSlopBytes ::
     GcMetrics
-      "rts.gc.slop_bytes"
+      "rts_gc_slop_bytes"
       "Total amount of slop (wasted memory)"
       'GaugeType
       ()
   GcDetailsMemInUseBytes ::
     GcMetrics
-      "rts.gc.mem_in_use_bytes"
+      "rts_gc_mem_in_use_bytes"
       "Total amount of memory in use by the RTS"
       'GaugeType
       ()
   GcDetailsCopiedBytes ::
     GcMetrics
-      "rts.gc.copied_bytes"
+      "rts_gc_copied_bytes"
       "Total amount of data copied during this GC"
       'GaugeType
       ()
   GcDetailsParMaxCopiedBytes ::
     GcMetrics
-      "rts.gc.par_max_copied_bytes"
+      "rts_gc_par_max_copied_bytes"
       "In parallel GC, the max amount of data copied by any one thread. Deprecated."
       'GaugeType
       ()
 #if MIN_VERSION_base(4,11,0)
   GcDetailsParBalancedCopiedBytes ::
     GcMetrics
-      "rts.gc.par_balanced_copied_bytes"
+      "rts_gc_par_balanced_copied_bytes"
       "In parallel GC, the amount of balanced data copied by all threads"
       'GaugeType
       ()
 #endif
   GcDetailsSyncElapsedNs ::
     GcMetrics
-      "rts.gc.sync_elapsed_ns"
+      "rts_gc_sync_elapsed_ns"
       "The time elapsed during synchronisation before GC"
       'GaugeType
       ()
   GcDetailsCpuNs ::
     GcMetrics
-      "rts.gc.cpu_ns"
+      "rts_gc_cpu_ns"
       "The CPU time used during GC itself"
       'GaugeType
       ()
   GcDetailsElapsedNs ::
     GcMetrics
-      "rts.gc.elapsed_ns"
+      "rts_gc_elapsed_ns"
       "The time elapsed during GC itself"
       'GaugeType
       ()

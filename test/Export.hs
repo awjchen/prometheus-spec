@@ -41,14 +41,14 @@ tests =
   counter1 <-
     createCounter
       ExampleCounter
-      (M.fromList [("label.name.1", "label value 1"), ("label.name.2", "label value 1")])
+      (M.fromList [("label_name_1", "label value 1"), ("label_name_2", "label value 1")])
       store
   Counter.add counter1 10
 
   counter2 <-
     createCounter
       ExampleCounter
-      (M.fromList [("label.name.1", "label value 2"), ("label.name.2", "label value 2")])
+      (M.fromList [("label_name_1", "label value 2"), ("label_name_2", "label value 2")])
       store
   Counter.add counter2 11
 
@@ -65,24 +65,24 @@ tests =
     BB.toLazyByteString . sampleToPrometheus <$> sampleAll store
 
   shouldBe prometheusSample
-    "# HELP _100gauge Example gauge\n# TYPE _100gauge gauge\n_100gauge 100.0\n\n# HELP my_counter Example counter\n# TYPE my_counter counter\nmy_counter{label_name_2=\"label value 1\",label_name_1=\"label value 1\"} 10.0\nmy_counter{label_name_2=\"label value 2\",label_name_1=\"label value 2\"} 11.0\n\n# HELP my_histogram Example histogram\n# TYPE my_histogram histogram\nmy_histogram_bucket{le=\"1.0\",label_name=\"label_value\"} 1\nmy_histogram_bucket{le=\"2.0\",label_name=\"label_value\"} 2\nmy_histogram_bucket{le=\"3.0\",label_name=\"label_value\"} 3\nmy_histogram_bucket{le=\"+Inf\",label_name=\"label_value\"} 4\nmy_histogram_sum{label_name=\"label_value\"} 10.0\nmy_histogram_count{label_name=\"label_value\"} 4\n"
+    "# HELP my_counter Example counter\n# TYPE my_counter counter\nmy_counter{label_name_2=\"label value 1\",label_name_1=\"label value 1\"} 10.0\nmy_counter{label_name_2=\"label value 2\",label_name_1=\"label value 2\"} 11.0\n\n# HELP my_gauge Example gauge\n# TYPE my_gauge gauge\nmy_gauge 100.0\n\n# HELP my_histogram Example histogram\n# TYPE my_histogram histogram\nmy_histogram_bucket{le=\"1.0\",label_name=\"label_value\"} 1\nmy_histogram_bucket{le=\"2.0\",label_name=\"label_value\"} 2\nmy_histogram_bucket{le=\"3.0\",label_name=\"label_value\"} 3\nmy_histogram_bucket{le=\"+Inf\",label_name=\"label_value\"} 4\nmy_histogram_sum{label_name=\"label_value\"} 10.0\nmy_histogram_count{label_name=\"label_value\"} 4\n"
 
 data ExampleMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
   ExampleGauge ::
     ExampleMetrics
-      "100gauge"
+      "my_gauge"
       "Example gauge"
       'GaugeType
       ()
   ExampleCounter ::
     ExampleMetrics
-      "my.counter"
+      "my_counter"
       "Example counter"
       'CounterType
       (M.HashMap T.Text T.Text)
   ExampleHistogram ::
     ExampleMetrics
-      "my.histogram"
+      "my_histogram"
       "Example histogram"
       'HistogramType
       (M.HashMap T.Text T.Text)

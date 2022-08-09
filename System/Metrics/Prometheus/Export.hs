@@ -49,9 +49,8 @@ module System.Metrics.Prometheus.Export
   , escapeLabelValue
   ) where
 
-import Data.Bifunctor (bimap, first, second)
+import Data.Bifunctor (second)
 import qualified Data.ByteString.Builder as B
-import Data.Char (isDigit)
 import qualified Data.HashMap.Strict as HM
 import Data.Int (Int64)
 import Data.List (intersperse)
@@ -74,64 +73,57 @@ import System.Metrics.Prometheus.Internal.State
 
 ------------------------------------------------------------------------------
 
--- | Encode a metrics 'Sample' into the Prometheus 2 exposition format,
--- adjusting the sample as follows:
+-- | Encode a metrics 'Sample' into the Prometheus 2 exposition format.
 --
--- * The names of metrics and labels are adjusted to be valid Prometheus
--- names (see
--- <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>):
+-- This function does not validate its input; you must ensure that the
+-- provided sample meets the following conditions:
 --
---     * characters not matched by the regex @[a-zA-Z0-9_]@ are replaced
---     with an underscore (@_@), and
+-- 1. The names of metrics and labels must match the regex
+-- @[a-zA-Z_][a-zA-Z0-9_]*@. See
+-- <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>.
 --
---     * if a name is empty or if its first character is not matched by
---     the regex @[a-zA-Z_]@, it is prefixed with an underscore (@_@).
---
--- Note that, for the output of this function to be a valid Prometheus
--- metric exposition, the 'Sample' you provide must meet the following
--- conditions:
---
---
--- * Within the values of labels, the backslash (@\\@), double-quote
+-- 2. Within the values of labels, the backslash (@\\@), double-quote
 -- (@\"@), and line feed (@\\n@) characters must be escaped as @\\\\@,
 -- @\\\"@, and @\\n@, respectively. See 'escapeLabelValue'.
 --
--- * If two metrics have the same name, they must also have the same
+-- 3. If two metrics have the same name, they must also have the same
 -- metric type.
 --
 --     * For each name, only metrics of one type (chosen arbitrarily)
 --     will be retained while those of other types will be discarded.
 --
+-- You can assume that samples obtained directly from
+-- 'System.Metrics.Prometheus.sampleAll' satisfy condition 1.
 --
 -- For example, a metrics sample consisting of
 --
 -- (1) a metric
 --
---      * named @100gauge@
+--      * named @my_counter@
+--      * with labels @{label_name_1="label value 1", label_name_2="label value 1"}@
+--      * of type @Counter@
+--      * with value @10@
+--      * with help text @"Example counter"@
+--
+-- (2) a metric
+--
+--      * named @my_counter@
+--      * with labels @{label_name_1="label value 2", label_name_2="label value 2"}@
+--      * of type @Counter@
+--      * with value @11@
+--      * with help text @"Example counter"@
+--
+-- (3) a metric
+--
+--      * named @my_gauge@
 --      * with no labels
 --      * of type @Gauge@
 --      * with value @100@
 --      * with help text @"Example gauge"@
 --
--- (2) a metric
---
---      * named @my.counter@
---      * with labels @{label.name.1="label value 1", label.name.2="label value 1"}@
---      * of type @Counter@
---      * with value @10@
---      * with help text @"Example counter"@
---
--- (3) a metric
---
---      * named @my.counter@
---      * with labels @{label.name.1="label value 2", label.name.2="label value 2"}@
---      * of type @Counter@
---      * with value @11@
---      * with help text @"Example counter"@
---
 -- (4) a metric
 --
---      * named @my.histogram@
+--      * named @my_histogram@
 --      * with labels @{label_name="label_value"}@
 --      * of type @Histogram@
 --      * with bucket upper bounds of @[1, 2, 3]@
@@ -140,23 +132,23 @@ import System.Metrics.Prometheus.Internal.State
 --
 -- is encoded as follows:
 --
--- > # HELP _100gauge Example gauge
--- > # TYPE _100gauge gauge
--- > _100gauge 100.0
--- >
 -- > # HELP my_counter Example counter
 -- > # TYPE my_counter counter
--- > my_counter{label_name_2=\"label value 1\",label_name_1=\"label value 1\"} 10.0
--- > my_counter{label_name_2=\"label value 2\",label_name_1=\"label value 2\"} 11.0
+-- > my_counter{label_name_2="label value 1",label_name_1="label value 1"} 10.0
+-- > my_counter{label_name_2="label value 2",label_name_1="label value 2"} 11.0
+-- >
+-- > # HELP my_gauge Example gauge
+-- > # TYPE my_gauge gauge
+-- > my_gauge 100.0
 -- >
 -- > # HELP my_histogram Example histogram
 -- > # TYPE my_histogram histogram
--- > my_histogram_bucket{le=\"1.0\",label_name=\"label_value\"} 1
--- > my_histogram_bucket{le=\"2.0\",label_name=\"label_value\"} 2
--- > my_histogram_bucket{le=\"3.0\",label_name=\"label_value\"} 3
--- > my_histogram_bucket{le=\"+Inf\",label_name=\"label_value\"} 4
--- > my_histogram_sum{label_name=\"label_value\"} 10.0
--- > my_histogram_count{label_name=\"label_value\"} 4
+-- > my_histogram_bucket{le="1.0",label_name="label_value"} 1
+-- > my_histogram_bucket{le="2.0",label_name="label_value"} 2
+-- > my_histogram_bucket{le="3.0",label_name="label_value"} 3
+-- > my_histogram_bucket{le="+Inf",label_name="label_value"} 4
+-- > my_histogram_sum{label_name="label_value"} 10.0
+-- > my_histogram_count{label_name="label_value"} 4
 --
 sampleToPrometheus :: Sample -> B.Builder
 sampleToPrometheus =
@@ -165,10 +157,7 @@ sampleToPrometheus =
     . map exportGroupedMetric
     . mapMaybe
         ( makeGroupedMetric
-        . bimap
-            sanitizeName
-            (second
-              (map (first (HM.mapKeys sanitizeName)) . M.toAscList))
+        . second (second (M.toAscList))
         )
     . M.toAscList
 
@@ -341,36 +330,6 @@ labelPair (labelName, labelValue) =
 
 ------------------------------------------------------------------------------
 -- Input sanitization
-
--- | Adjust a string so that it is a valid Prometheus name:
---
--- * Characters not matched by the regex @[a-zA-Z0-9_]@ are replaced
--- with an underscore (@_@); and
---
--- * If a name is empty or if its first character is not matched by the
--- regex @[a-zA-Z_]@, it is prefixed with an underscore (@_@).
---
--- This function is idempotent.
---
--- See
--- <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>
--- for more details.
---
-sanitizeName :: T.Text -> T.Text
-sanitizeName rawName =
-  case T.uncons rawName of
-    Nothing -> "_"
-    Just (headChar, _tail) -> prefix <> sanitizedName
-      where
-        prefix = if isInitialNameChar headChar then "" else "_"
-        sanitizedName = T.map (\c -> if isNameChar c then c else '_') rawName
-
-isNameChar :: Char -> Bool
-isNameChar c = isInitialNameChar c || isDigit c
-
-isInitialNameChar :: Char -> Bool
-isInitialNameChar c =
-  'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_'
 
 -- | A convenience function for escaping the backslash (@\\@),
 -- double-quote (@\"@), and line feed (@\\n@) characters of a string as

@@ -44,6 +44,7 @@ library
     System.Metrics.Prometheus.Internal.Sample
     System.Metrics.Prometheus.Internal.State
     System.Metrics.Prometheus.Internal.Store
+    System.Metrics.Prometheus.Validation
 
   other-modules:
     Data.Array

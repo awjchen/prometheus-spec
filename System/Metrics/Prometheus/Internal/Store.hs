@@ -60,7 +60,11 @@ module System.Metrics.Prometheus.Internal.Store
     , Value(..)
     ) where
 
+import Control.Exception (throwIO)
+import Control.Monad (unless)
+import Data.Foldable (for_)
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import qualified Data.HashMap.Strict as HM
 import Data.List (foldl')
 import qualified Data.Map.Strict as M
 import Prelude hiding (read)
@@ -74,6 +78,10 @@ import qualified System.Metrics.Prometheus.Histogram as Histogram
 import System.Metrics.Prometheus.Internal.State
   hiding (deregister, register, registerGroup, sampleAll)
 import qualified System.Metrics.Prometheus.Internal.State as Internal
+import System.Metrics.Prometheus.Validation
+  ( ValidationError (..),
+    isValidName,
+  )
 
 ------------------------------------------------------------------------
 -- * The metric store
@@ -90,28 +98,39 @@ newStore = Store <$> newIORef initialState
 
 -- | An action that registers one or more metrics to a metric store.
 newtype Registration =
-  Registration (State -> (State, [Handle] -> [Handle]))
+  Registration
+    (State -> Either ValidationError (State, [Handle] -> [Handle]))
 
 instance Semigroup Registration where
-  Registration f <> Registration g = Registration $ \state0 ->
-    let (state1, h1) = f state0
-        (state2, h2) = g state1
-    in  (state2, h2 . h1)
+  Registration f <> Registration g = Registration $ \state0 -> do
+    (state1, h1) <- f state0
+    (state2, h2) <- g state1
+    pure (state2, h2 . h1)
 
 instance Monoid Registration where
-  mempty = Registration $ \state -> (state, id)
+  mempty = Registration $ \state -> Right (state, id)
 
 -- | Atomically apply a registration action to a metrics store. Returns
--- an action to (atomically) deregisterMetric the newly registered metrics.
+-- an action to (atomically) deregister the newly registered metrics.
+-- Throws 'ValidationError' if the given registration contains any
+-- invalid metric or label names.
 register
   :: Store -- ^ Metric store
   -> Registration -- ^ Registration action
   -> IO (IO ()) -- ^ Deregistration action
-register (Store stateRef) (Registration f) =
-    atomicModifyIORef' stateRef $ \state0 ->
-        let (state1, handles') = f state0
-            deregisterAction = deregisterHandles (handles' []) stateRef
-        in  (state1, deregisterAction)
+register (Store stateRef) (Registration f) = do
+    result <- atomicModifyIORef' stateRef $ \state0 ->
+        case f state0 of
+            Left validationError ->
+                -- Preserve state on error
+                (state0, Left validationError)
+            Right (state1, handles') ->
+                let deregisterAction =
+                        deregisterHandles (handles' []) stateRef
+                in  (state1, Right deregisterAction)
+    case result of
+        Left validationError -> throwIO validationError
+        Right deregisterAction -> pure deregisterAction
 
 -- | Deregister the metrics referred to by the given handles.
 deregisterHandles
@@ -155,19 +174,43 @@ registerGeneric
   -> Help -- ^ Metric documentation
   -> MetricSampler -- ^ Sampling action
   -> Registration -- ^ Registration action
-registerGeneric identifier help sample = Registration $ \state0 ->
-    let (state1, handle) =
-          Internal.register identifier help sample state0
-    in  (state1, (:) handle)
+registerGeneric identifier help sample =
+  Registration $ \state0 -> do
+      validateIdentifier identifier
+      let (state1, handle) =
+            Internal.register identifier help sample state0
+      pure (state1, (:) handle)
+
+validateIdentifier :: Identifier -> Either ValidationError ()
+validateIdentifier identifier = do
+    let metricName = idName identifier
+    unless (isValidName metricName) $
+        Left (InvalidMetricName metricName)
+    for_ (HM.keys (idLabels identifier)) $ \labelName ->
+        unless (isValidName labelName) $
+            Left (InvalidLabelName labelName)
 
 registerGroup
     :: M.Map Name (Help, M.Map Labels (a -> Value))
         -- ^ Metric names and getter functions
     -> IO a -- ^ Action to sample the metric group
     -> Registration -- ^ Registration action
-registerGroup getters cb = Registration $ \state0 ->
+registerGroup getters cb = Registration $ \state0 -> do
+    validateGroupGetters getters
     let (state1, handles) = Internal.registerGroup getters cb state0
-    in  (state1, (++) handles)
+    pure (state1, (++) handles)
+
+validateGroupGetters
+    :: M.Map Name (Help, M.Map Labels (a -> Value))
+    -> Either ValidationError ()
+validateGroupGetters getters =
+    for_ (M.toList getters) $ \(metricName, (_help, labelsMap)) -> do
+        unless (isValidName metricName) $
+            Left (InvalidMetricName metricName)
+        for_ (M.keys labelsMap) $ \labelSet ->
+            for_ (HM.keys labelSet) $ \labelName ->
+                unless (isValidName labelName) $
+                    Left (InvalidLabelName labelName)
 
 ------------------------------------------------------------------------
 -- ** Convenience functions

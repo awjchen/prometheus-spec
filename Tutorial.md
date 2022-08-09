@@ -88,8 +88,8 @@ data AppMetrics1
   -> Type -- ^ Label set structure
   -> Type
   where
-  Requests :: AppMetrics1 "my_app.requests" "" 'CounterType ()
-  Connections :: AppMetrics1 "my_app.connections" "" 'GaugeType ()
+  Requests :: AppMetrics1 "app_requests" "" 'CounterType ()
+  Connections :: AppMetrics1 "app_connections" "" 'GaugeType ()
 ```
 
 The `AppMetrics1` GADT has two constructors, `Requests` and
@@ -98,7 +98,7 @@ of each constructor determine the name, type, and "label structure" of
 their corresponding metric. For example, the `Requests` constructor
 specifies a metric with:
 
-* name "my_app.requests", and
+* name "app_requests", and
 * type counter, and
 * labels disabled.
 
@@ -136,8 +136,8 @@ app1 = do
 
   -- Verify the sample, just for this tutorial.
   let expectedSample = M.fromList
-        [ ("my_app.requests", ("", M.singleton HM.empty (Counter 1)))
-        , ("my_app.connections", ("", M.singleton HM.empty (Gauge 99)))
+        [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
+        , ("app_connections", ("", M.singleton HM.empty (Gauge 99)))
         ]
   assert (sample == expectedSample) $ pure ()
 ```
@@ -329,8 +329,8 @@ app3 = do
 
   sample1 <- sampleAll store
   let expectedSample1 = M.fromList
-        [ ("my_app.requests", ("", M.singleton HM.empty (Counter 1)))
-        , ("my_app.connections", ("", M.singleton HM.empty (Gauge 99)))
+        [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
+        , ("app_connections", ("", M.singleton HM.empty (Gauge 99)))
         ]
   assert (sample1 == expectedSample1) $ pure ()
 
@@ -342,8 +342,8 @@ app3 = do
 
   sample2 <- sampleAll store
   let expectedSample2 = M.fromList
-        [ ("my_app.requests", ("", M.singleton HM.empty (Counter 1)))
-        , ("my_app.connections", ("", M.singleton HM.empty (Gauge 5)))
+        [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
+        , ("app_connections", ("", M.singleton HM.empty (Gauge 5)))
         ]
   assert (sample2 == expectedSample2) $ pure ()
 
@@ -352,7 +352,7 @@ app3 = do
 
   sample3 <- sampleAll store
   let expectedSample3 =
-        M.singleton "my_app.connections" $
+        M.singleton "app_connections" $
           ("", M.singleton HM.empty (Gauge 5))
   assert (sample3 == expectedSample3) $ pure ()
 ```
@@ -438,8 +438,8 @@ example program that does this:
 ```haskell
 -- (1)
 data GcMetrics' :: Symbol -> Symbol -> MetricType -> Type -> Type where
-  Gcs' :: GcMetrics' "rts.gcs" "" 'CounterType ()
-  MaxLiveBytes' :: GcMetrics' "rts.max_live_bytes" "" 'GaugeType ()
+  Gcs' :: GcMetrics' "rts_gcs" "" 'CounterType ()
+  MaxLiveBytes' :: GcMetrics' "rts_max_live_bytes" "" 'GaugeType ()
 
 app5 :: IO ()
 app5 = do
