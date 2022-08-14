@@ -157,7 +157,7 @@ sampleToPrometheus =
     . map exportGroupedMetric
     . mapMaybe
         ( makeGroupedMetric
-        . second (second (M.toAscList))
+        . second (second M.toAscList)
         )
     . M.toAscList
 

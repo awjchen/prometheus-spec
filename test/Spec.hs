@@ -6,6 +6,7 @@ import qualified Counter
 import qualified Export
 import qualified State
 import qualified Store
+import qualified Validation
 
 main :: IO ()
 main = hspec $ do
@@ -13,3 +14,4 @@ main = hspec $ do
   Store.tests
   Counter.tests
   Export.tests
+  Validation.tests

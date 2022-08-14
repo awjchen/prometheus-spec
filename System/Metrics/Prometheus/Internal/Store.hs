@@ -67,6 +67,7 @@ import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import qualified Data.HashMap.Strict as HM
 import Data.List (foldl')
 import qualified Data.Map.Strict as M
+import Data.Text (Text)
 import Prelude hiding (read)
 
 import System.Metrics.Prometheus.Counter (Counter)
@@ -80,6 +81,7 @@ import System.Metrics.Prometheus.Internal.State
 import qualified System.Metrics.Prometheus.Internal.State as Internal
 import System.Metrics.Prometheus.Validation
   ( ValidationError (..),
+    isValidHelpText,
     isValidName,
   )
 
@@ -177,6 +179,7 @@ registerGeneric
 registerGeneric identifier help sample =
   Registration $ \state0 -> do
       validateIdentifier identifier
+      validateHelpText help
       let (state1, handle) =
             Internal.register identifier help sample state0
       pure (state1, (:) handle)
@@ -204,13 +207,18 @@ validateGroupGetters
     :: M.Map Name (Help, M.Map Labels (a -> Value))
     -> Either ValidationError ()
 validateGroupGetters getters =
-    for_ (M.toList getters) $ \(metricName, (_help, labelsMap)) -> do
+    for_ (M.toList getters) $ \(metricName, (help, labelsMap)) -> do
         unless (isValidName metricName) $
             Left (InvalidMetricName metricName)
+        validateHelpText help
         for_ (M.keys labelsMap) $ \labelSet ->
             for_ (HM.keys labelSet) $ \labelName ->
                 unless (isValidName labelName) $
                     Left (InvalidLabelName labelName)
+
+validateHelpText :: Text -> Either ValidationError ()
+validateHelpText help =
+  if isValidHelpText help then Right () else Left (InvalidHelpText help)
 
 ------------------------------------------------------------------------
 -- ** Convenience functions
