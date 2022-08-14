@@ -63,7 +63,7 @@ module System.Metrics.Prometheus
     -- $registering
   , register
   , Registration
-  , ValidationError (..)
+  , Internal.ValidationError (..)
   , registerCounter
   , registerGauge
   , registerHistogram
@@ -106,7 +106,6 @@ import System.Metrics.Prometheus.Histogram (HistogramSample)
 import qualified System.Metrics.Prometheus.Histogram as Histogram
 import qualified System.Metrics.Prometheus.Internal.Sample as Sample
 import qualified System.Metrics.Prometheus.Internal.Store as Internal
-import System.Metrics.Prometheus.Validation (ValidationError (..))
 
 -- $overview
 -- Metrics are used to monitor program behavior and performance. All

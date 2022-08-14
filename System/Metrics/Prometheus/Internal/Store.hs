@@ -47,6 +47,9 @@ module System.Metrics.Prometheus.Internal.Store
     , registerHistogram
     , registerGroup
 
+      -- ** Validation
+    , ValidationError (..)
+
       -- ** Convenience functions
       -- $convenience
     , createCounter
@@ -60,13 +63,14 @@ module System.Metrics.Prometheus.Internal.Store
     , Value(..)
     ) where
 
-import Control.Exception (throwIO)
+import Control.Exception (Exception, throwIO)
 import Control.Monad (unless)
 import Data.Foldable (for_)
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import qualified Data.HashMap.Strict as HM
 import Data.List (foldl')
 import qualified Data.Map.Strict as M
+import qualified Data.Text as T
 import Data.Text (Text)
 import Prelude hiding (read)
 
@@ -80,8 +84,7 @@ import System.Metrics.Prometheus.Internal.State
   hiding (deregister, register, registerGroup, sampleAll)
 import qualified System.Metrics.Prometheus.Internal.State as Internal
 import System.Metrics.Prometheus.Validation
-  ( ValidationError (..),
-    isValidHelpText,
+  ( isValidHelpText,
     isValidName,
   )
 
@@ -184,15 +187,6 @@ registerGeneric identifier help sample =
             Internal.register identifier help sample state0
       pure (state1, (:) handle)
 
-validateIdentifier :: Identifier -> Either ValidationError ()
-validateIdentifier identifier = do
-    let metricName = idName identifier
-    unless (isValidName metricName) $
-        Left (InvalidMetricName metricName)
-    for_ (HM.keys (idLabels identifier)) $ \labelName ->
-        unless (isValidName labelName) $
-            Left (InvalidLabelName labelName)
-
 registerGroup
     :: M.Map Name (Help, M.Map Labels (a -> Value))
         -- ^ Metric names and getter functions
@@ -202,6 +196,18 @@ registerGroup getters cb = Registration $ \state0 -> do
     validateGroupGetters getters
     let (state1, handles) = Internal.registerGroup getters cb state0
     pure (state1, (++) handles)
+
+------------------------------------------------------------------------
+-- ** Validation
+
+validateIdentifier :: Identifier -> Either ValidationError ()
+validateIdentifier identifier = do
+    let metricName = idName identifier
+    unless (isValidName metricName) $
+        Left (InvalidMetricName metricName)
+    for_ (HM.keys (idLabels identifier)) $ \labelName ->
+        unless (isValidName labelName) $
+            Left (InvalidLabelName labelName)
 
 validateGroupGetters
     :: M.Map Name (Help, M.Map Labels (a -> Value))
@@ -218,7 +224,24 @@ validateGroupGetters getters =
 
 validateHelpText :: Text -> Either ValidationError ()
 validateHelpText help =
-  if isValidHelpText help then Right () else Left (InvalidHelpText help)
+    if isValidHelpText help
+        then Right ()
+        else Left (InvalidHelpText help)
+
+data ValidationError
+  = InvalidMetricName Text
+  | InvalidLabelName Text
+  | InvalidHelpText Text
+
+instance Exception ValidationError
+
+instance Show ValidationError where
+    show (InvalidMetricName invalidName) =
+        "Invalid Prometheus metric name: " ++ T.unpack invalidName
+    show (InvalidLabelName invalidName) =
+        "Invalid Prometheus label name: " ++ T.unpack invalidName
+    show (InvalidHelpText invalidHelpText) =
+        "Invalid Prometheus help text: " ++ T.unpack invalidHelpText
 
 ------------------------------------------------------------------------
 -- ** Convenience functions

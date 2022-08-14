@@ -1,32 +1,13 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 module System.Metrics.Prometheus.Validation
-  ( ValidationError (..)
-  , isValidName
+  ( isValidName
   , isValidHelpText
   , isValidLabelValue
   ) where
 
-import Control.Exception
 import Data.Char (isDigit)
 import qualified Data.Text as T
-
---------------------------------------------------------------------------------
-
-data ValidationError
-  = InvalidMetricName T.Text
-  | InvalidLabelName T.Text
-  | InvalidHelpText T.Text
-
-instance Exception ValidationError
-
-instance Show ValidationError where
-  show (InvalidMetricName invalidName) =
-    "Invalid Prometheus metric name: " ++ T.unpack invalidName
-  show (InvalidLabelName invalidName) =
-    "Invalid Prometheus label name: " ++ T.unpack invalidName
-  show (InvalidHelpText invalidHelpText) =
-    "Invalid Prometheus help text: " ++ T.unpack invalidHelpText
 
 --------------------------------------------------------------------------------
 
