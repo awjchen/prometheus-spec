@@ -94,6 +94,7 @@ test-suite ekg-prometheus-test
     bytestring,
     containers,
     hspec ^>= 2.8.2,
+    hspec-expectations ^>= 0.8.2,
     hspec-smallcheck ^>= 0.5.2,
     HUnit ^>= 1.6.2.0,
     QuickCheck ^>= 2.14.2,
