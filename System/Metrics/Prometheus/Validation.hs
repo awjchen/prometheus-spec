@@ -47,16 +47,16 @@ isValidHelpText =
   checkResult . T.foldl' f initialCheckState
   where
     f :: CheckState -> Char -> CheckState
-    f CheckState{haveFoundError, isLastCharBackslash} char =
+    f CheckState{haveFoundError, isPrevCharBackslash} char =
       case char of
         '\n' -> CheckState True NotBackslash
         '\\' ->
-          if isLastCharBackslash == Backslash
+          if isPrevCharBackslash == Backslash
             then CheckState haveFoundError NotBackslash
             else CheckState haveFoundError Backslash
         'n' -> CheckState haveFoundError NotBackslash
         _ -> CheckState
-              (isLastCharBackslash == Backslash || haveFoundError)
+              (isPrevCharBackslash == Backslash || haveFoundError)
               NotBackslash
 
 -- | Test whether a string is a valid Prometheus label value.
@@ -72,26 +72,26 @@ isValidLabelValue =
   checkResult . T.foldl' f initialCheckState
   where
     f :: CheckState -> Char -> CheckState
-    f CheckState{haveFoundError, isLastCharBackslash} char =
+    f CheckState{haveFoundError, isPrevCharBackslash} char =
       case char of
         '\n' -> CheckState True NotBackslash
         '\\' ->
-          if isLastCharBackslash == Backslash
+          if isPrevCharBackslash == Backslash
             then CheckState haveFoundError NotBackslash
             else CheckState haveFoundError Backslash
         'n' -> CheckState haveFoundError NotBackslash
         '\"' ->
           -- Extra case relative to `isValidHelpText`
-          if isLastCharBackslash == Backslash
+          if isPrevCharBackslash == Backslash
             then CheckState haveFoundError NotBackslash
             else CheckState True NotBackslash
         _ -> CheckState
-              (isLastCharBackslash == Backslash || haveFoundError)
+              (isPrevCharBackslash == Backslash || haveFoundError)
               NotBackslash
 
 data CheckState = CheckState
   { haveFoundError :: !Bool
-  , isLastCharBackslash :: !IsBackslash
+  , isPrevCharBackslash :: !IsBackslash
   }
 
 data IsBackslash = Backslash | NotBackslash
@@ -100,9 +100,9 @@ data IsBackslash = Backslash | NotBackslash
 initialCheckState :: CheckState
 initialCheckState = CheckState
   { haveFoundError = False
-  , isLastCharBackslash = NotBackslash
+  , isPrevCharBackslash = NotBackslash
   }
 
 checkResult :: CheckState -> Bool
 checkResult st =
-  not (haveFoundError st) && isLastCharBackslash st == NotBackslash
+  not (haveFoundError st) && isPrevCharBackslash st == NotBackslash

@@ -202,31 +202,33 @@ registerGroup getters cb = Registration $ \state0 -> do
 
 validateIdentifier :: Identifier -> Either ValidationError ()
 validateIdentifier identifier = do
-    let metricName = idName identifier
-    unless (isValidName metricName) $
-        Left (InvalidMetricName metricName)
-    for_ (HM.keys (idLabels identifier)) $ \labelName ->
-        unless (isValidName labelName) $
-            Left (InvalidLabelName labelName)
+    validateMetricName (idName identifier)
+    for_ (HM.keys (idLabels identifier)) validateLabelName
 
 validateGroupGetters
     :: M.Map Name (Help, M.Map Labels (a -> Value))
     -> Either ValidationError ()
 validateGroupGetters getters =
-    for_ (M.toList getters) $ \(metricName, (help, labelsMap)) -> do
-        unless (isValidName metricName) $
-            Left (InvalidMetricName metricName)
+    for_ (M.toList getters) $ \(metricName, (help, labelSetMap)) -> do
+        validateMetricName metricName
         validateHelpText help
-        for_ (M.keys labelsMap) $ \labelSet ->
-            for_ (HM.keys labelSet) $ \labelName ->
-                unless (isValidName labelName) $
-                    Left (InvalidLabelName labelName)
+        for_ (M.keys labelSetMap) $ \labelSet ->
+            for_ (HM.keys labelSet) validateLabelName
+
+validateMetricName :: Text -> Either ValidationError ()
+validateMetricName labelName =
+    unless (isValidName labelName) $
+        Left (InvalidMetricName labelName)
+
+validateLabelName :: Text -> Either ValidationError ()
+validateLabelName labelName =
+    unless (isValidName labelName) $
+        Left (InvalidLabelName labelName)
 
 validateHelpText :: Text -> Either ValidationError ()
 validateHelpText help =
-    if isValidHelpText help
-        then Right ()
-        else Left (InvalidHelpText help)
+    unless (isValidHelpText help) $
+        Left (InvalidHelpText help)
 
 data ValidationError
   = InvalidMetricName Text
