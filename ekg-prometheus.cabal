@@ -14,8 +14,7 @@ maintainer:          Johan Tibell <johan.tibell@gmail.com>,
 category:            System
 build-type:          Simple
 extra-source-files:  CHANGES.md
-tested-with:         GHC == 8.10.7, GHC == 8.8.3, GHC == 8.6.5,
-                     GHC == 8.4.4,  GHC == 8.2.2
+tested-with:         GHC == 9.2.5, GHC == 8.10.7
 
 common common-all
   ghc-options:

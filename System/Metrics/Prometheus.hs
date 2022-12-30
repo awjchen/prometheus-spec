@@ -61,8 +61,11 @@ module System.Metrics.Prometheus
 
     -- ** Registering
     -- $registering
-  , register
+  , registerPermanently
+  , registerRemovably
+  , registerRemovablyCatch
   , Registration
+  , Internal.RegistrationError (..)
   , Internal.ValidationError (..)
   , registerCounter
   , registerGauge
@@ -106,6 +109,7 @@ import System.Metrics.Prometheus.Histogram (HistogramSample)
 import qualified System.Metrics.Prometheus.Histogram as Histogram
 import qualified System.Metrics.Prometheus.Internal.Sample as Sample
 import qualified System.Metrics.Prometheus.Internal.Store as Internal
+import System.Metrics.Prometheus.Internal.Store (RegistrationError)
 
 -- $overview
 -- Metrics are used to monitor program behavior and performance. All
@@ -400,33 +404,79 @@ ofAll _ = Metric
 
 -- $registering-and-deregistering
 -- Before metrics can be sampled, they need to be registered with the
--- metric store. Once registered, metrics can also be deregistered.
+-- metric store.
 
 ------------------------------------------------------------------------
 -- ** Registering
 
 -- $registering
--- Metrics are identified by both their metric class and label set. If
--- you try to register a metric at an identifier that is already in use
--- by an existing metric, the existing metric will be deregistered and
--- replaced by the new metric.
+-- Metrics are registered as either "permanent" or "removable".
+-- Removable metrics can later be deregistered and replaced, while
+-- permanent metrics cannot.
 --
--- Upon `register`ing a set of metrics, you will be given a handle that
--- can be used to deregister the newly registered metrics /specifically/,
--- in the following sense. If a deregistration handle targets a metric,
--- and that metric is replaced by a new metric, the new metric will not
--- be deregistered if the handle is handle used.
+-- Metrics are identified by the combination of their metric name and
+-- label set. If you try to register a metric at an identifier that is
+-- already in use by an existing metric, what happens depends on whether
+-- the metrics are permanent or removable. If both metrics are
+-- removable, then the existing metric will be deregistered and replaced
+-- by the new metric; in all other cases, an exception will be thrown.
+--
+-- Upon registering a set of removable metrics, you will be given a
+-- handle that can be used to deregister the newly registered metrics
+-- /specifically/, in the following sense. If a deregistration handle
+-- targets a metric, and that metric is replaced by a new metric, the
+-- new metric will not be deregistered if the handle is used.
 
--- | Atomically register one or more metrics. Returns a handle for
--- atomically deregistering those metrics specifically. Throws
--- 'ValidationError' if the given registration contains any invalid
--- metric or label names.
-register
+-- | Atomically apply a registration action to a metrics store,
+-- registering the metrics as "permanent" metrics that cannot be removed
+-- or replaced. In case of collisions of metric identifiers (name and
+-- labels), throws an exception.
+--
+-- Throws a 'RegistrationError' exception if
+--
+-- * the registration attempts to register a metric with the name and
+--   labels of an existing metric in the store; or if
+--
+-- * the registration contains invalid metric names, label names, or
+--   help text.
+registerPermanently
+  :: Store metrics -- ^ Metric store
+  -> Registration metrics -- ^ Registration action
+  -> IO () -- ^ Deregistration handle
+registerPermanently (Store store) (Registration registration) =
+    Internal.registerPermanently store registration
+
+-- | Atomically apply a registration action to a metrics store,
+-- registering the metrics as "removable" metrics that can later be
+-- removed or replaced. Returns an action to (atomically) deregister the
+-- newly registered metrics. In case of collisions of metric identifiers
+-- (name and labels), replaces existing metrics if they are removable,
+-- and throws an exception if they are permanent.
+
+-- Throws a 'RegistrationError' exception if
+--
+-- * the registration attempts to register a metric with the name and
+--   labels of an existing metric in the store, _unless_ the existing
+--   metric was registered as a removable metric via
+--   'registerRemovably'; or if
+--
+-- * the registration contains invalid metric names, label names, or
+--   help text.
+registerRemovably
   :: Store metrics -- ^ Metric store
   -> Registration metrics -- ^ Registration action
   -> IO (IO ()) -- ^ Deregistration handle
-register (Store store) (Registration registration) =
-    Internal.register store registration
+registerRemovably (Store store) (Registration registration) =
+    Internal.registerRemovably store registration
+
+-- | Like 'registerRemovably', but returns 'RegistrationError's via
+-- 'Either' rather than throwing them.
+registerRemovablyCatch
+  :: Store metrics -- ^ Metric store
+  -> Registration metrics -- ^ Registration action
+  -> IO (Either RegistrationError (IO ())) -- ^ Deregistration handle
+registerRemovablyCatch (Store store) (Registration registration) =
+    Internal.registerRemovablyCatch store registration
 
 -- | An action that registers one or more metrics to a metric store.
 -- Can only be run by `register`.
@@ -593,12 +643,13 @@ instance
 -- ** Convenience functions
 
 -- $convenience
--- These functions combined the creation of a mutable reference (e.g.
--- a `System.Metrics.Prometheus.Counter.Counter`) with registering that reference
--- in the store in one convenient function. The deregistration handles
--- are discarded.
+-- These functions combine the creation of a mutable reference (e.g. a
+-- `System.Metrics.Prometheus.Counter.Counter`) with registering that
+-- reference as a permanent metric.
 
--- | Create and register a zero-initialized counter.
+-- | Create and permanently register a zero-initialized counter.
+--
+-- Can throw 'RegistrationError' exceptions.
 createCounter
   :: forall metrics name help labels.
       (KnownSymbol name, KnownSymbol help, ToLabels labels)
@@ -608,7 +659,9 @@ createCounter
   -> IO Counter.Counter
 createCounter = createGeneric Internal.createCounter
 
--- | Create and register a zero-initialized gauge.
+-- | Create and permanently register a zero-initialized gauge.
+--
+-- Can throw 'RegistrationError' exceptions.
 createGauge
   :: forall metrics name help labels.
       (KnownSymbol name, KnownSymbol help, ToLabels labels)
@@ -618,8 +671,10 @@ createGauge
   -> IO Gauge.Gauge
 createGauge = createGeneric Internal.createGauge
 
--- | Create and register an empty histogram. The buckets of the
--- histogram are fixed and defined by the given upper bounds.
+-- | Create and permanently register an empty histogram. The buckets of
+-- the histogram are fixed and defined by the given upper bounds.
+--
+-- Can throw 'RegistrationError' exceptions.
 createHistogram
   :: forall metrics name help labels.
       (KnownSymbol name, KnownSymbol help, ToLabels labels)

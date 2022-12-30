@@ -28,5 +28,4 @@ main = do
         SamplingGroup
           :> (RTSGcs, (), fromIntegral . gcs)
           :> (RTSMaxLiveBytes, (), fromIntegral . max_live_bytes)
-  _ <- register store $ registerGroup samplingGroup getRTSStats
-  pure ()
+  registerPermanently store $ registerGroup samplingGroup getRTSStats
