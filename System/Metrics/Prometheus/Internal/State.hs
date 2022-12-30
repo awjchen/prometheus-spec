@@ -424,7 +424,7 @@ sampleGroups cbSamplers =
     runOne :: GroupSampler -> IO SampleWithoutHelp
     runOne GroupSampler{..} = do
         a <- groupSampleAction
-        return $! M.map (M.map ($a)) groupSamplerMetrics
+        return $! M.map (M.map ($ a)) groupSamplerMetrics
 
 -- | The value of a sampled metric.
 data Value = Counter {-# UNPACK #-} !Double
