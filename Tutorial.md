@@ -1,3 +1,5 @@
+NOTE: This tutorial is not being maintained. It needs to be rewritten.
+
 # Tutorial
 
 This document introduces the `ekg-prometheus` Prometheus client library,
@@ -11,28 +13,34 @@ For a more complete API reference, see the Haddocks of the
 This document is a literate Haskell program:
 
 ```haskell
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
+-- Note: The code in this tutorial is not being maintained.
+main :: IO ()
+main = pure ()
+```
 
-module Main where
-
-import Control.Exception (assert)
-import qualified Data.HashMap.Strict as HM
-import qualified Data.Map.Strict as M
-import qualified Data.Text as T
-import Data.Kind (Type)
-import GHC.Generics (Generic)
-import GHC.Stats (RTSStats (..), getRTSStats)
-import GHC.TypeLits (Symbol)
-
--- This package's modules
-import System.Metrics.Prometheus
-import qualified System.Metrics.Prometheus.Counter as Counter
-import qualified System.Metrics.Prometheus.Gauge as Gauge
+```haskell
+-- {-# LANGUAGE DataKinds #-}
+-- {-# LANGUAGE DeriveGeneric #-}
+-- {-# LANGUAGE GADTs #-}
+-- {-# LANGUAGE KindSignatures #-}
+-- {-# LANGUAGE OverloadedStrings #-}
+-- {-# LANGUAGE TypeApplications #-}
+-- 
+-- module Main where
+-- 
+-- import Control.Exception (assert)
+-- import qualified Data.HashMap.Strict as HM
+-- import qualified Data.Map.Strict as M
+-- import qualified Data.Text as T
+-- import Data.Kind (Type)
+-- import GHC.Generics (Generic)
+-- import GHC.Stats (RTSStats (..), getRTSStats)
+-- import GHC.TypeLits (Symbol)
+-- 
+-- -- This package's modules
+-- import System.Metrics.Prometheus
+-- import qualified System.Metrics.Prometheus.Counter as Counter
+-- import qualified System.Metrics.Prometheus.Gauge as Gauge
 ```
 
 Although you will need to use some type-level features of Haskell when
@@ -81,15 +89,15 @@ data type (GADT) with a specific kind signature. Here is an example GADT
 that specifies two metrics:
 
 ```haskell
-data AppMetrics1
-  :: Symbol -- ^ Metric name
-  -> Symbol -- ^ Metric documentation
-  -> MetricType -- ^ e.g. Counter, Gauge
-  -> Type -- ^ Label set structure
-  -> Type
-  where
-  Requests :: AppMetrics1 "app_requests" "" 'CounterType ()
-  Connections :: AppMetrics1 "app_connections" "" 'GaugeType ()
+-- data AppMetrics1
+--   :: Symbol -- ^ Metric name
+--   -> Symbol -- ^ Metric documentation
+--   -> MetricType -- ^ e.g. Counter, Gauge
+--   -> Type -- ^ Label set structure
+--   -> Type
+--   where
+--   Requests :: AppMetrics1 "app_requests" "" 'CounterType ()
+--   Connections :: AppMetrics1 "app_connections" "" 'GaugeType ()
 ```
 
 The `AppMetrics1` GADT has two constructors, `Requests` and
@@ -113,33 +121,33 @@ annotate a metric store and start registering and collecting metrics.
 Here is an example program that uses the above specification:
 
 ```haskell
-app1 :: IO ()
-app1 = do
-  -- Create a mutable reference to a metric store.
-  store <- newStore @AppMetrics1 -- (1)
-
-  -- Initialize mutable references to metrics.
-  requestsCounter <- Counter.new
-  connectionsGauge <- Gauge.new
-
-  -- Register the metrics to the metric store.
-  _ <- register store $ -- (2)
-    registerCounter Requests () (Counter.read requestsCounter) <>
-    registerGauge Connections () (Gauge.read connectionsGauge)
-
-  -- Update the values of the metrics.
-  Counter.inc requestsCounter
-  Gauge.set connectionsGauge 99
-
-  -- Get the current values of all the metrics in the store.
-  sample <- sampleAll store -- (3)
-
-  -- Verify the sample, just for this tutorial.
-  let expectedSample = M.fromList
-        [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
-        , ("app_connections", ("", M.singleton HM.empty (Gauge 99)))
-        ]
-  assert (sample == expectedSample) $ pure ()
+-- app1 :: IO ()
+-- app1 = do
+--   -- Create a mutable reference to a metric store.
+--   store <- newStore @AppMetrics1 -- (1)
+-- 
+--   -- Initialize mutable references to metrics.
+--   requestsCounter <- Counter.new
+--   connectionsGauge <- Gauge.new
+-- 
+--   -- Register the metrics to the metric store.
+--   _ <- register store $ -- (2)
+--     registerCounter Requests () (Counter.read requestsCounter) <>
+--     registerGauge Connections () (Gauge.read connectionsGauge)
+-- 
+--   -- Update the values of the metrics.
+--   Counter.inc requestsCounter
+--   Gauge.set connectionsGauge 99
+-- 
+--   -- Get the current values of all the metrics in the store.
+--   sample <- sampleAll store -- (3)
+-- 
+--   -- Verify the sample, just for this tutorial.
+--   let expectedSample = M.fromList
+--         [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
+--         , ("app_connections", ("", M.singleton HM.empty (Gauge 99)))
+--         ]
+--   assert (sample == expectedSample) $ pure ()
 ```
 
 1. Metric store references are parameterized by a metrics specification.
@@ -196,31 +204,31 @@ Here is an example metrics specification that defines some labelled
 metrics:
 
 ```haskell
-data AppMetrics2
-  :: Symbol
-  -> Symbol
-  -> MetricType
-  -> Type -- ^ Label set structure
-  -> Type
-  where
-  -- (1)
-  HTTPRequests ::
-    AppMetrics2 "requests" "" 'CounterType EndpointLabels
-  DBConnections ::
-    AppMetrics2 "total_connections" "" 'GaugeType DataSourceLabels
-
--- (2)
-newtype EndpointLabels = EndpointLabels { endpoint :: T.Text }
-
-instance ToLabels EndpointLabels where
-  toLabels (EndpointLabels endpoint') = HM.singleton "endpoint" endpoint'
-
--- 3
-data DataSourceLabels = DataSourceLabels
-  { source_name :: T.Text
-  , conn_info :: T.Text
-  } deriving (Generic)
-instance ToLabels DataSourceLabels
+-- data AppMetrics2
+--   :: Symbol
+--   -> Symbol
+--   -> MetricType
+--   -> Type -- ^ Label set structure
+--   -> Type
+--   where
+--   -- (1)
+--   HTTPRequests ::
+--     AppMetrics2 "requests" "" 'CounterType EndpointLabels
+--   DBConnections ::
+--     AppMetrics2 "total_connections" "" 'GaugeType DataSourceLabels
+-- 
+-- -- (2)
+-- newtype EndpointLabels = EndpointLabels { endpoint :: T.Text }
+-- 
+-- instance ToLabels EndpointLabels where
+--   toLabels (EndpointLabels endpoint') = HM.singleton "endpoint" endpoint'
+-- 
+-- -- 3
+-- data DataSourceLabels = DataSourceLabels
+--   { source_name :: T.Text
+--   , conn_info :: T.Text
+--   } deriving (Generic)
+-- instance ToLabels DataSourceLabels
 ```
 
 1. The third type parameter of the constructors is used to specify
@@ -243,50 +251,50 @@ instance ToLabels DataSourceLabels
 Here is an example program using this metrics specification:
 
 ```haskell
-app2 :: IO ()
-app2 = do
-  store <- newStore @AppMetrics2
-
-  harpsichordRequests <- Counter.new
-  tablaRequests <- Counter.new
-  dbConnections <- Gauge.new
-
-  _ <- register store $ mconcat
-    [ registerCounter HTTPRequests (EndpointLabels "dev/harpsichord") (Counter.read harpsichordRequests)
-    , registerCounter HTTPRequests (EndpointLabels "dev/tabla") (Counter.read tablaRequests)
-    , let labels = DataSourceLabels
-            { source_name = "myDB"
-            , conn_info = "localhost:5432" }
-      in  registerGauge DBConnections labels (Gauge.read dbConnections)
-    ]
-
-  Counter.inc tablaRequests
-  Gauge.set dbConnections 99
-
-  sample <- sampleAll store
-
-  let expectedSample = M.fromList
-        [ ( "requests"
-          , ( ""
-            , M.fromList
-                [ (HM.singleton "endpoint" "dev/harpsichord", Counter 0)
-                , (HM.singleton "endpoint" "dev/tabla", Counter 1)
-                ]
-            )
-          )
-        , ( "total_connections"
-          , ( ""
-            , M.singleton
-                ( HM.fromList
-                  [ ("source_name", "myDB")
-                  , ("conn_info", "localhost:5432")
-                  ]
-                )
-                (Gauge 99)
-            )
-          )
-        ]
-  assert (sample == expectedSample) $ pure ()
+-- app2 :: IO ()
+-- app2 = do
+--   store <- newStore @AppMetrics2
+-- 
+--   harpsichordRequests <- Counter.new
+--   tablaRequests <- Counter.new
+--   dbConnections <- Gauge.new
+-- 
+--   _ <- register store $ mconcat
+--     [ registerCounter HTTPRequests (EndpointLabels "dev/harpsichord") (Counter.read harpsichordRequests)
+--     , registerCounter HTTPRequests (EndpointLabels "dev/tabla") (Counter.read tablaRequests)
+--     , let labels = DataSourceLabels
+--             { source_name = "myDB"
+--             , conn_info = "localhost:5432" }
+--       in  registerGauge DBConnections labels (Gauge.read dbConnections)
+--     ]
+-- 
+--   Counter.inc tablaRequests
+--   Gauge.set dbConnections 99
+-- 
+--   sample <- sampleAll store
+-- 
+--   let expectedSample = M.fromList
+--         [ ( "requests"
+--           , ( ""
+--             , M.fromList
+--                 [ (HM.singleton "endpoint" "dev/harpsichord", Counter 0)
+--                 , (HM.singleton "endpoint" "dev/tabla", Counter 1)
+--                 ]
+--             )
+--           )
+--         , ( "total_connections"
+--           , ( ""
+--             , M.singleton
+--                 ( HM.fromList
+--                   [ ("source_name", "myDB")
+--                   , ("conn_info", "localhost:5432")
+--                   ]
+--                 )
+--                 (Gauge 99)
+--             )
+--           )
+--         ]
+--   assert (sample == expectedSample) $ pure ()
 ```
 
 ## Reregistering and deregistering metrics
@@ -312,49 +320,49 @@ Here is an example program that illustrates the reregistration and
 deregistration of metrics:
 
 ```haskell
-app3 :: IO ()
-app3 = do
-  store <- newStore @AppMetrics1 -- reusing a previous specification
-
-  requestsCounter <- Counter.new
-  connectionsGauge <- Gauge.new
-
-  -- Register the metrics, retaining the deregistration handle. -- (1)
-  deregistrationHandle <- register store $
-    registerCounter Requests () (Counter.read requestsCounter) <>
-    registerGauge Connections () (Gauge.read connectionsGauge)
-
-  Counter.inc requestsCounter
-  Gauge.set connectionsGauge 99
-
-  sample1 <- sampleAll store
-  let expectedSample1 = M.fromList
-        [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
-        , ("app_connections", ("", M.singleton HM.empty (Gauge 99)))
-        ]
-  assert (sample1 == expectedSample1) $ pure ()
-
-  -- Replace (reregister) the connections gauge metric with a new one.
-  replacementConnectionsGauge <- Gauge.new
-  Gauge.set replacementConnectionsGauge 5
-  _ <- register store $
-    registerGauge Connections () (Gauge.read replacementConnectionsGauge)
-
-  sample2 <- sampleAll store
-  let expectedSample2 = M.fromList
-        [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
-        , ("app_connections", ("", M.singleton HM.empty (Gauge 5)))
-        ]
-  assert (sample2 == expectedSample2) $ pure ()
-
-  -- Use the deregistration handle to deregister the original metrics.
-  deregistrationHandle -- (2)
-
-  sample3 <- sampleAll store
-  let expectedSample3 =
-        M.singleton "app_connections" $
-          ("", M.singleton HM.empty (Gauge 5))
-  assert (sample3 == expectedSample3) $ pure ()
+-- app3 :: IO ()
+-- app3 = do
+--   store <- newStore @AppMetrics1 -- reusing a previous specification
+-- 
+--   requestsCounter <- Counter.new
+--   connectionsGauge <- Gauge.new
+-- 
+--   -- Register the metrics, retaining the deregistration handle. -- (1)
+--   deregistrationHandle <- register store $
+--     registerCounter Requests () (Counter.read requestsCounter) <>
+--     registerGauge Connections () (Gauge.read connectionsGauge)
+-- 
+--   Counter.inc requestsCounter
+--   Gauge.set connectionsGauge 99
+-- 
+--   sample1 <- sampleAll store
+--   let expectedSample1 = M.fromList
+--         [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
+--         , ("app_connections", ("", M.singleton HM.empty (Gauge 99)))
+--         ]
+--   assert (sample1 == expectedSample1) $ pure ()
+-- 
+--   -- Replace (reregister) the connections gauge metric with a new one.
+--   replacementConnectionsGauge <- Gauge.new
+--   Gauge.set replacementConnectionsGauge 5
+--   _ <- register store $
+--     registerGauge Connections () (Gauge.read replacementConnectionsGauge)
+-- 
+--   sample2 <- sampleAll store
+--   let expectedSample2 = M.fromList
+--         [ ("app_requests", ("", M.singleton HM.empty (Counter 1)))
+--         , ("app_connections", ("", M.singleton HM.empty (Gauge 5)))
+--         ]
+--   assert (sample2 == expectedSample2) $ pure ()
+-- 
+--   -- Use the deregistration handle to deregister the original metrics.
+--   deregistrationHandle -- (2)
+-- 
+--   sample3 <- sampleAll store
+--   let expectedSample3 =
+--         M.singleton "app_connections" $
+--           ("", M.singleton HM.empty (Gauge 5))
+--   assert (sample3 == expectedSample3) $ pure ()
 ```
 
 1. Deregistration handles were present in in all previous examples,
@@ -378,18 +386,18 @@ specification (used by `registerGcMetrics`) as a part of another metrics
 specification:
 
 ```haskell
-data AppMetrics4 :: Symbol -> Symbol -> MetricType -> Type -> Type where
-  -- (1)
-  GcSubset ::
-    GcMetrics name help metricType labels ->
-    AppMetrics4 name help metricType labels
-
-app4 :: IO ()
-app4 = do
-  store <- newStore @AppMetrics4
-  -- (2)
-  _ <- register (subset GcSubset store) registerGcMetrics
-  pure ()
+-- data AppMetrics4 :: Symbol -> Symbol -> MetricType -> Type -> Type where
+--   -- (1)
+--   GcSubset ::
+--     GcMetrics name help metricType labels ->
+--     AppMetrics4 name help metricType labels
+-- 
+-- app4 :: IO ()
+-- app4 = do
+--   store <- newStore @AppMetrics4
+--   -- (2)
+--   _ <- register (subset GcSubset store) registerGcMetrics
+--   pure ()
 ```
 
 1. We define a constructor, `GcSubset`, that takes any metric class from
@@ -436,24 +444,24 @@ To register an atomically-sampled group of metrics, use the
 example program that does this:
 
 ```haskell
--- (1)
-data GcMetrics' :: Symbol -> Symbol -> MetricType -> Type -> Type where
-  Gcs' :: GcMetrics' "rts_gcs" "" 'CounterType ()
-  MaxLiveBytes' :: GcMetrics' "rts_max_live_bytes" "" 'GaugeType ()
-
-app5 :: IO ()
-app5 = do
-  store <- newStore @GcMetrics'
-
-  -- (2)
-  let samplingGroup =
-        SamplingGroup
-          :> (Gcs', (), fromIntegral . gcs)
-          :> (MaxLiveBytes', (), fromIntegral . max_live_bytes)
-
-  _ <- register store $
-        registerGroup samplingGroup getRTSStats -- (3)
-  pure ()
+-- -- (1)
+-- data GcMetrics' :: Symbol -> Symbol -> MetricType -> Type -> Type where
+--   Gcs' :: GcMetrics' "rts_gcs" "" 'CounterType ()
+--   MaxLiveBytes' :: GcMetrics' "rts_max_live_bytes" "" 'GaugeType ()
+-- 
+-- app5 :: IO ()
+-- app5 = do
+--   store <- newStore @GcMetrics'
+-- 
+--   -- (2)
+--   let samplingGroup =
+--         SamplingGroup
+--           :> (Gcs', (), fromIntegral . gcs)
+--           :> (MaxLiveBytes', (), fromIntegral . max_live_bytes)
+-- 
+--   _ <- register store $
+--         registerGroup samplingGroup getRTSStats -- (3)
+--   pure ()
 ```
 
 1. We replicate part of the `GcMetrics` metrics specification from
@@ -499,40 +507,40 @@ You can register metrics to a metric store so that they cannot be
 removed or modified. Here is an example program that does this.
 
 ```haskell
--- (1)
-data AppMetrics6 :: Symbol -> Symbol -> MetricType -> Type -> Type where
-  DynamicSubset ::
-    DynamicMetrics name help metricType labels ->
-    AppMetrics6 name help metricType labels
-  StaticSubset ::
-    StaticMetrics name help metricType labels ->
-    AppMetrics6 name help metricType labels
-
-data StaticMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
-  MyStaticMetric :: StaticMetrics "my_static_metric" "" 'CounterType ()
-
-data DynamicMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
-  MyDynamicMetric :: DynamicMetrics "my_dynamic_metric" "" 'CounterType ()
-
-app6 :: IO ()
-app6 = do
-  (_store, _staticMetrics) <- do
-    store <- newStore @AppMetrics6
-    -- (2)
-    let staticRef = subset StaticSubset store
-        dynamicRef = subset DynamicSubset store
-    staticMetrics <- registerStaticMetrics staticRef
-    pure (dynamicRef, staticMetrics)
-
-  -- (3)
-  pure ()
-
-registerStaticMetrics :: Store StaticMetrics -> IO Counter.Counter
-registerStaticMetrics store = do
-  counter <- Counter.new
-  _ <- register store $
-        registerCounter MyStaticMetric () (Counter.read counter)
-  pure counter
+-- -- (1)
+-- data AppMetrics6 :: Symbol -> Symbol -> MetricType -> Type -> Type where
+--   DynamicSubset ::
+--     DynamicMetrics name help metricType labels ->
+--     AppMetrics6 name help metricType labels
+--   StaticSubset ::
+--     StaticMetrics name help metricType labels ->
+--     AppMetrics6 name help metricType labels
+-- 
+-- data StaticMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
+--   MyStaticMetric :: StaticMetrics "my_static_metric" "" 'CounterType ()
+-- 
+-- data DynamicMetrics :: Symbol -> Symbol -> MetricType -> Type -> Type where
+--   MyDynamicMetric :: DynamicMetrics "my_dynamic_metric" "" 'CounterType ()
+-- 
+-- app6 :: IO ()
+-- app6 = do
+--   (_store, _staticMetrics) <- do
+--     store <- newStore @AppMetrics6
+--     -- (2)
+--     let staticRef = subset StaticSubset store
+--         dynamicRef = subset DynamicSubset store
+--     staticMetrics <- registerStaticMetrics staticRef
+--     pure (dynamicRef, staticMetrics)
+-- 
+--   -- (3)
+--   pure ()
+-- 
+-- registerStaticMetrics :: Store StaticMetrics -> IO Counter.Counter
+-- registerStaticMetrics store = do
+--   counter <- Counter.new
+--   _ <- register store $
+--         registerCounter MyStaticMetric () (Counter.read counter)
+--   pure counter
 ```
 
 1. We divide our metrics specification into two subsets: one for static
@@ -557,12 +565,12 @@ This tutorial is compiled and run as a test using the `markdown-unlit`
 package.
 
 ```haskell
-main :: IO ()
-main = do
-  app1
-  app2
-  app3
-  app4
-  app5
-  app6
+-- main :: IO ()
+-- main = do
+--   app1
+--   app2
+--   app3
+--   app4
+--   app5
+--   app6
 ```
