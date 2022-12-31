@@ -37,8 +37,10 @@ smokeTest = do
 
   let counterIdentifier = Identifier "ccounter" mempty
       gaugeIdentifier = Identifier "cgauge" mempty
+      histogramIdentifier = Identifier "chistogram" mempty
   !_ <- createCounter counterIdentifier "" store
   !_ <- createGauge gaugeIdentifier "" store
+  !_ <- createHistogram [] histogramIdentifier "" store
 
   deregistrationHandle <- register store $ mconcat
     [ registerCounter (Identifier "rcounter" mempty) "" (pure 0)
