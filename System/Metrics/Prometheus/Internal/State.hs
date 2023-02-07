@@ -29,7 +29,9 @@ module System.Metrics.Prometheus.Internal.State
     , register
     , Mutability (..)
     , registerGroup
+    , registerUncheckedDynamicGroup
     , deregister
+    , deregisterUncheckedDynamicGroup
 
       -- * Derived operations
       -- $derived-operations
@@ -51,6 +53,7 @@ module System.Metrics.Prometheus.Internal.State
     , SampledState (..)
     , sampleState
     , functionallyEqual
+    , unsafeGetHandleVersion
     ) where
 
 import Data.Bifunctor (second)
@@ -80,7 +83,7 @@ type Version = Integer
 data State = State
      { stateMetrics ::
         !(M.Map Name (Help, M.Map Labels Metric))
-        -- ^ A registry of all metrics in the store.
+        -- ^ A registry of all (tracked) metrics in the store.
         --
         -- Metrics are uniquely identified by the combination of their
         -- name and labels. Within the store, metric identifiers are
@@ -99,6 +102,12 @@ data State = State
         -- for a metric exactly when the metric's identifier is
         -- associated with the group @g@ in the `stateMetrics` registry;
         -- sample groups must sample for at least one metric.
+     , stateUncheckedDynamicGroups :: !(M.Map Version UncheckedDynamicGroupSampler)
+        -- ^ Actions to sample "unchecked", "dynamic" groups of metrics.
+        --
+        -- See the documentation of `UncheckedDynamicGroupSampler`.
+        --
+        -- No invariants.
      , stateNextGroupId  :: !GroupId
         -- ^ The `GroupId` to be used for the next registered group.
         --
@@ -152,6 +161,25 @@ data GroupSampler = forall a. GroupSampler
         -- ^ Metric identifiers and getter functions.
      }
 
+-- | An action to sample an a group of metrics, much like
+-- `GroupSampler`, but the metrics of this group can, at sampling time,
+-- generate any number of values at arbitrary labels. This is the sense
+-- in which these groups are "dynamic".
+--
+-- This type of sampler serve as an escape hatch from the structure
+-- otherwise imposed on metrics by this library. However, users are
+-- expected to ensure that their sampling actions avoid collisions of
+-- metric identifiers; in the case of a collision, we emit neither
+-- warnings nor errors and arbitrarily choose one metric to export. This
+-- is the sense in which these groups are "unchecked".
+data UncheckedDynamicGroupSampler = forall a. UncheckedDynamicGroupSampler
+     { uncheckedDynamicGroupSampleAction :: !(IO a)
+        -- ^ Action to sample the metric group
+     , uncheckedDynamicGroupSamplerMetrics ::
+          !(M.Map Name (Help, a -> M.Map Labels Value))
+        -- ^ Metric identifiers and getter functions.
+     }
+
 -- | Metrics are uniquely identified by the combination of their name
 -- and labels.
 data Identifier = Identifier
@@ -164,7 +192,7 @@ data Identifier = Identifier
 
 -- | The initial state of a new store.
 initialState :: State
-initialState = State M.empty M.empty 0 0
+initialState = State M.empty M.empty M.empty 0 0
 
 ------------------------------------------------------------------------
 -- * State verification
@@ -223,8 +251,10 @@ checkNextGroupId State{..} =
 -- all existing metrics.
 checkNextMetricVersion :: State -> Bool
 checkNextMetricVersion State{..} =
-    let versions =
+    let versions = checkedVersions ++ uncheckedVersions
+        checkedVersions =
           map metricVersion $ M.elems =<< map snd (M.elems stateMetrics)
+        uncheckedVersions = M.keys stateUncheckedDynamicGroups
     in  all (< stateNextMetricVersion) versions
 
 ------------------------------------------------------------------------
@@ -307,7 +337,7 @@ insertMetricSampler identifier help sampler mutability state0 =
               (stateMetrics state0)
         , stateNextMetricVersion = stateNextMetricVersion0 + 1
         }
-      handle = Handle identifier stateNextMetricVersion0
+      handle = CheckedHandle identifier stateNextMetricVersion0
   in  (state1, handle)
 
 -- | Register a group of metrics sharing a common sampling action. If
@@ -379,8 +409,44 @@ insertGroupReference groupId mutability state0 (identifier, help) =
               (stateMetrics state0)
         , stateNextMetricVersion = stateNextMetricVersion0 + 1
         }
-      handle = Handle identifier stateNextMetricVersion0
+      handle = CheckedHandle identifier stateNextMetricVersion0
   in  (state1, handle)
+
+-- | Register a group of metrics sharing a common sampling action, where
+-- each metric may generate, at sampling time, any number of values at
+-- arbitrary labels.
+
+-- Implementation note: We do not track the mutability of unchecked
+-- groups in the state because we (1) do not (and cannot) detect
+-- identifier collisions at registration time and (2) do not emit
+-- warnings or errors for collisions at sampling time.
+registerUncheckedDynamicGroup
+  :: M.Map Name (Help, a -> M.Map Labels Value)
+      -- ^ Metric identifiers and getter functions
+  -> IO a -- ^ Action to sample the metric group
+  -> State
+  -> (State, Maybe Handle)
+registerUncheckedDynamicGroup getters cb state0
+  | M.null getters = (state0, Nothing)
+  | otherwise =
+      let stateNextMetricVersion0 = stateNextMetricVersion state0
+          state1 = state0
+            { stateUncheckedDynamicGroups =
+                M.insert
+                  stateNextMetricVersion0
+                  (UncheckedDynamicGroupSampler cb getters)
+                  (stateUncheckedDynamicGroups state0)
+            , stateNextMetricVersion = stateNextMetricVersion0 + 1
+            }
+          handle = UncheckedHandle stateNextMetricVersion0
+      in  (state1, Just handle)
+
+deregisterUncheckedDynamicGroup :: Version -> State -> State
+deregisterUncheckedDynamicGroup version state0 =
+  state0
+    { stateUncheckedDynamicGroups =
+        M.delete version (stateUncheckedDynamicGroups state0)
+    }
 
 ------------------------------------------------------------------------
 -- * Derived operations
@@ -395,21 +461,34 @@ insertGroupReference groupId mutability state0 (identifier, help) =
 --
 -- A value of this type should never be exposed in order to prevent it
 -- from being applied to the wrong `State`.
-data Handle = Handle Identifier Version
+data Handle
+  = CheckedHandle Identifier Version
+  | UncheckedHandle Version
+
+-- For testing purposes only
+unsafeGetHandleVersion :: Handle -> Version
+unsafeGetHandleVersion handle =
+  case handle of
+    CheckedHandle _ version -> version
+    UncheckedHandle version -> version
 
 -- | Deregister the particular metric referenced by the handle. That is,
 -- deregister the metric at the given identifier, but only if its
 -- version matches that held by the `Handle`.
 deregisterByHandle :: Handle -> State -> State
-deregisterByHandle (Handle identifier version) state =
-    let Identifier name labels = identifier
-     in case Sample.lookup name labels (stateMetrics state) of
-            Nothing -> state
-            Just (Metric _ version' _) ->
-                if version == version' then
-                    deregister identifier state
-                else
-                    state
+deregisterByHandle handle state =
+  case handle of
+    CheckedHandle identifier version ->
+      let Identifier name labels = identifier
+      in case Sample.lookup name labels (stateMetrics state) of
+              Nothing -> state
+              Just (Metric _ version' _) ->
+                  if version == version' then
+                      deregister identifier state
+                  else
+                      state
+    UncheckedHandle version ->
+      deregisterUncheckedDynamicGroup version state
 
 ------------------------------------------------------------------------
 -- * Query
@@ -447,8 +526,45 @@ sampleAll state = do
         groups = stateGroups state
     groupSamples <- sampleGroups $ M.elems groups
     individualSamples <- readAllRefs metrics
-    let allSamples = joinGroupSamples individualSamples groupSamples
+    uncheckedDynamicGroupSamples <-
+      sampleUncheckedDynamicGroups $
+        M.elems (stateUncheckedDynamicGroups state)
+    let checkedSamples =
+          joinGroupSamples individualSamples groupSamples
+        allSamples =
+          M.unionWith
+            unionWithHelp
+            checkedSamples
+            uncheckedDynamicGroupSamples
     return $! allSamples
+
+-- | Sample all metric groups.
+sampleGroups :: [GroupSampler] -> IO SampleWithoutHelp
+sampleGroups cbSamplers =
+  M.unionsWith M.union `fmap` mapM runOne cbSamplers
+  where
+    runOne :: GroupSampler -> IO SampleWithoutHelp
+    runOne GroupSampler{..} = do
+        a <- groupSampleAction
+        return $! M.map (M.map ($ a)) groupSamplerMetrics
+
+-- | Sample all unchecked dynamic metric groups.
+sampleUncheckedDynamicGroups
+  :: [UncheckedDynamicGroupSampler] -> IO Sample
+sampleUncheckedDynamicGroups cbSamplers =
+  M.unionsWith unionWithHelp `fmap` mapM runOne cbSamplers
+  where
+    runOne :: UncheckedDynamicGroupSampler -> IO Sample
+    runOne UncheckedDynamicGroupSampler{..} = do
+      a <- uncheckedDynamicGroupSampleAction
+      return $! M.map (second ($ a)) uncheckedDynamicGroupSamplerMetrics
+
+unionWithHelp
+  :: (Help, M.Map Labels Value)
+  -> (Help, M.Map Labels Value)
+  -> (Help, M.Map Labels Value)
+unionWithHelp (help1, labelMap1) (_help2, labelMap2) =
+  (help1, M.union labelMap1 labelMap2)
 
 -- | Merge together samples of individual metrics (with help text) and
 -- samples of grouped metrics (without help text).
@@ -461,16 +577,6 @@ joinGroupSamples =
       (\_key (help, labelsMap1) labelsMap2 ->
           (help, M.union labelsMap1 labelsMap2)
       ))
-
--- | Sample all metric groups.
-sampleGroups :: [GroupSampler] -> IO SampleWithoutHelp
-sampleGroups cbSamplers =
-  M.unionsWith M.union `fmap` mapM runOne cbSamplers
-  where
-    runOne :: GroupSampler -> IO SampleWithoutHelp
-    runOne GroupSampler{..} = do
-        a <- groupSampleAction
-        return $! M.map (M.map ($ a)) groupSamplerMetrics
 
 -- | The value of a sampled metric.
 data Value = Counter {-# UNPACK #-} !Double
@@ -510,6 +616,7 @@ data SampledState = SampledState
         !(M.Map Name
             (Help, M.Map Labels (Either Value GroupId, Version)))
      , sampledStateGroups :: !(M.Map GroupId SampleWithoutHelp)
+     , sampledStateUncheckedDynamicGroups :: !(M.Map Version Sample)
      , sampledStateNextGroupId :: !GroupId
      , sampledStateNextMetricVersion :: !Version
      }
@@ -522,9 +629,14 @@ sampleState State{..} = do
   sampledMetrics <-
     traverse (traverse (traverse sampleMetric)) stateMetrics
   sampledGroups <- traverse sampleGroupSampler stateGroups
+  sampledUncheckedDynamicGroups <-
+    traverse
+      sampleUncheckedDynamicGroupSampler
+      stateUncheckedDynamicGroups
   pure $ SampledState
      { sampledStateMetrics = sampledMetrics
      , sampledStateGroups = sampledGroups
+     , sampledStateUncheckedDynamicGroups = sampledUncheckedDynamicGroups
      , sampledStateNextGroupId = stateNextGroupId
      , sampledStateNextMetricVersion = stateNextMetricVersion
      }
@@ -543,18 +655,26 @@ sampleState State{..} = do
       (\r -> M.map (M.map ($ r)) groupSamplerMetrics)
         <$> groupSampleAction
 
+    sampleUncheckedDynamicGroupSampler
+      :: UncheckedDynamicGroupSampler -> IO Sample
+    sampleUncheckedDynamicGroupSampler UncheckedDynamicGroupSampler{..} = do
+      (\r -> M.map (fmap ($ r)) uncheckedDynamicGroupSamplerMetrics)
+        <$> uncheckedDynamicGroupSampleAction
+
 -- | Test for equality ignoring `MetricId`s and `GroupId`s.
 --
 -- This test assumes that each `GroupSampler` in `stateGroups` is
 -- unique, which follows from the `State` invariants.
 functionallyEqual :: SampledState -> SampledState -> Bool
-functionallyEqual state1 state2 = withoutIds state1 == withoutIds state2
+functionallyEqual state1 state2 =
+  checkedStateWithoutIds state1 == checkedStateWithoutIds state2
+     && sampledStateUncheckedDynamicGroups state1 == sampledStateUncheckedDynamicGroups state2
   where
-    withoutIds
+    checkedStateWithoutIds
       :: SampledState
       -> M.Map Name
           (Help, M.Map Labels (Either Value (Maybe SampleWithoutHelp)))
-    withoutIds state =
+    checkedStateWithoutIds state =
       flip (M.map . second . M.map) (sampledStateMetrics state) $
         \(e, _version) -> case e of
           Left value -> Left value

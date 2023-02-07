@@ -72,6 +72,8 @@ module System.Metrics.Prometheus
   , registerHistogram
   , registerGroup
   , SamplingGroup (..)
+  , registerUncheckedDynamicGroup
+  , UncheckedDynamicSamplingGroup (..)
   , MetricValue
 
     -- ** Convenience functions
@@ -95,9 +97,12 @@ module System.Metrics.Prometheus
   , GcMetrics (..)
   ) where
 
+import Data.Bifunctor (bimap)
 import Data.Coerce (coerce)
 import qualified Data.HashMap.Strict as HM
 import Data.Kind (Type)
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
 import Data.Proxy
 import qualified Data.Text as T
 import GHC.Generics
@@ -580,7 +585,8 @@ registerGroup = registerGroup_ []
 
 
 infixl 9 :>
--- | A group of metrics derived from the same sample.
+-- | A group of metrics derived from the same sample, where the derived
+-- metrics are known statically (up to their sampled value).
 data SamplingGroup
   :: (Symbol -> Symbol -> MetricType -> Type -> Type)
   -> Type
@@ -638,6 +644,94 @@ instance
           , toMetricValue (Proxy @metricType) . getter
           )
     in  registerGroup_ (getter' : getters) group sample
+
+-- | Like 'registerGroup', but where each metric may generate any number
+-- of values at arbitrary labels.
+--
+-- This function is intended as an escape hatch, allowing one to bypass
+-- the usual constraint on metric registrations: that the set of metric
+-- identifiers (name + labels) to be emitted at sampling time is known
+-- at registration time.
+--
+-- In exchange, you must ensure that the identifiers of the metrics you
+-- emit using this functionality do not collide with other metric
+-- identifiers, as no check for metric identifier collisions can be
+-- performed at registration time. In the case of a collision at
+-- sampling time, metrics /not/ registered via this function take
+-- precedence; precedence is otherwise undefined.
+--
+-- (Note: The @RegisterUncheckedDynamicGroup@ constraint can safely be
+-- ignored.)
+--
+registerUncheckedDynamicGroup
+  :: (RegisterUncheckedDynamicGroup xs)
+  => UncheckedDynamicSamplingGroup metrics env xs -- ^ Metric identifiers and getter functions
+  -> IO env -- ^ Action to sample the metric group
+  -> Registration metrics -- ^ Registration action
+registerUncheckedDynamicGroup = registerUncheckedDynamicGroup_ []
+
+
+infixl 9 ::>
+-- | A group of metrics derived from the same sample, where the labels of
+-- the derived metrics are not known statically.
+data UncheckedDynamicSamplingGroup
+  :: (Symbol -> Symbol -> MetricType -> Type -> Type)
+  -> Type
+  -> [Type]
+  -> Type
+  where
+  -- | The empty sampling group
+  UncheckedDynamicSamplingGroup :: UncheckedDynamicSamplingGroup metrics env '[]
+  -- | Add a metric to a sampling group
+  (::>)
+    :: UncheckedDynamicSamplingGroup metrics env xs -- ^ Group to add to
+    ->  ( metrics name help metricType labels
+        , env -> [(labels, MetricValue metricType)] ) -- Not using Map to avoid requiring an `Ord` instance for `labels`
+        -- ^ Metric class, Labels, Getter function
+    -> UncheckedDynamicSamplingGroup metrics env (metrics name help metricType labels ': xs)
+
+-- | Helper class for `registerUncheckedDynamicGroup`.
+class RegisterUncheckedDynamicGroup (xs :: [Type]) where
+  registerUncheckedDynamicGroup_
+    :: [( Internal.Name
+        , Internal.Help
+        , env -> Map Internal.Labels Internal.Value
+        )]
+        -- ^ Processed metrics
+    -> UncheckedDynamicSamplingGroup metrics env xs -- ^ Metrics to be processed
+    -> IO env -- ^ Action to sample the metric group
+    -> Registration metrics
+
+-- | Base case
+instance RegisterUncheckedDynamicGroup '[] where
+  registerUncheckedDynamicGroup_ getters UncheckedDynamicSamplingGroup sample =
+    let getterMap =
+          Map.fromList $
+            map
+              (\(name, help, getter) -> (name, (help, getter)))
+              getters
+     in Registration $ Internal.registerUncheckedDynamicGroup getterMap sample
+
+-- | Inductive case
+instance
+  ( RegisterUncheckedDynamicGroup xs
+  , ToMetricValue metricType
+  , KnownSymbol name
+  , KnownSymbol help
+  , ToLabels labels
+  ) => RegisterUncheckedDynamicGroup (metrics name help metricType labels ': xs)
+  where
+  registerUncheckedDynamicGroup_ getters (group ::> (_, getter)) sample =
+    let name = T.pack $ symbolVal (Proxy @name)
+        help = T.pack $ symbolVal (Proxy @help)
+        getter' =
+          ( name
+          , help
+          , Map.fromList
+              . map (bimap toLabels (toMetricValue (Proxy @metricType)))
+              . getter
+          )
+    in  registerUncheckedDynamicGroup_ (getter' : getters) group sample
 
 ------------------------------------------------------------------------
 -- ** Convenience functions
