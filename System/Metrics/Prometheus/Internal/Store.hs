@@ -1,4 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
+{-# LANGUAGE BangPatterns #-}
+
 -- |
 -- This module defines the metrics store and all of its operations using
 -- the state type defined in "System.Metrics.Prometheus.Internal.State". The
@@ -241,7 +243,7 @@ registerCounter :: Identifier -- ^ Counter identifier
                 -> Help -- ^ Metric documentation
                 -> IO Double  -- ^ Action to read the current metric value
                 -> Registration -- ^ Registration action
-registerCounter identifier help sample =
+registerCounter identifier help !sample =
     registerGeneric identifier help (CounterS sample)
 
 -- | Register an integer-valued metric. The provided action to read
@@ -250,7 +252,7 @@ registerGauge :: Identifier -- ^ Gauge identifier
               -> Help -- ^ Metric documentation
               -> IO Double  -- ^ Action to read the current metric value
               -> Registration -- ^ Registration action
-registerGauge identifier help sample =
+registerGauge identifier help !sample =
     registerGeneric identifier help (GaugeS sample)
 
 -- | Register a histogram metric. The provided action to read the value
@@ -259,7 +261,7 @@ registerHistogram :: Identifier -- ^ Histogram identifier
                   -> Help -- ^ Metric documentation
                   -> IO HistogramSample -- ^ Action to read the current metric value
                   -> Registration -- ^ Registration action
-registerHistogram identifier help sample =
+registerHistogram identifier help !sample =
     registerGeneric identifier help (HistogramS sample)
 
 registerGeneric
@@ -281,7 +283,7 @@ registerGroup
         -- ^ Metric names and getter functions
     -> IO a -- ^ Action to sample the metric group
     -> Registration -- ^ Registration action
-registerGroup getters cb =
+registerGroup !getters !cb =
     Registration $ \mutability state0 -> do
         validateGroupGetters state0 mutability getters
         let (state1, handles) =
