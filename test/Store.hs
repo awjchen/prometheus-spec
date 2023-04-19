@@ -174,20 +174,17 @@ test_uncheckedDynamicGroups =
           , ("name2", ("help2", Map.singleton labelSet2 (Gauge 2)))
           ]
 
-    it "Register their metrics (smoke test)" $ do
-      store <- newStore
-      registerPermanently store $
-        registerUncheckedDynamicGroup dynamicGroup (pure ())
-      sample <- sampleAll store
-      sample `shouldBe` expectedSample
-
-    it "Deregister correctly (smoke test)" $ do
+    it "Register and deregister their metrics (smoke test)" $ do
       store <- newStore
 
       deregistrationHandle <-
         registerRemovably store $
           registerUncheckedDynamicGroup dynamicGroup (pure ())
-      deregistrationHandle
-      sample <- sampleAll store
 
-      sample `shouldBe` Map.empty
+      sample1 <- sampleAll store
+      sample1 `shouldBe` expectedSample
+
+      deregistrationHandle
+
+      sample2 <- sampleAll store
+      sample2 `shouldBe` Map.empty
