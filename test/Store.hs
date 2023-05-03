@@ -28,6 +28,7 @@ tests =
     describe
       "Permanent and removable metrics"
       test_permanentAndRemovableMetrics
+    test_uncheckedDynamicGroups
 
 -- | A test that simply runs functions from the interface to make sure they
 -- don't throw errors or never return, that is, that they don't evaluate to
@@ -57,6 +58,9 @@ smokeTest = do
           , flip registerGroup (pure ()) $ Sample.fromList
               [ (prefix <> "groupMetric", HM.singleton (prefix <> "counter") mempty, "", const (Counter 0))
               , (prefix <> "groupMetric", HM.singleton (prefix <> "gauge") mempty, "", const (Gauge 0))
+              ]
+          , flip registerUncheckedDynamicGroup (pure ()) $ Map.fromList
+              [ (prefix <> "uncheckedGroupMetric", ("", const mempty))
               ]
           ]
 
@@ -146,3 +150,41 @@ test_permanentAndRemovableMetrics = do
     _ <- registerRemovably store $
       registerCounter (Identifier "name" HM.empty) "help" (pure 0)
     pure ()
+
+test_uncheckedDynamicGroups :: Spec
+test_uncheckedDynamicGroups =
+  describe "Unchecked dynamic metric groups" $ do
+    let labelSet1 = HM.singleton "label1" "labelVal1"
+        labelSet2 = HM.singleton "label2" "labelVal2"
+        dynamicGroup =
+          Map.fromList
+            [ ( "name1"
+              , ( "help1"
+                , \() -> Map.singleton labelSet1 (Gauge 1)
+                )
+              )
+            , ("name2"
+              , ("help2"
+                , \() -> Map.singleton labelSet2 (Gauge 2)
+                )
+              )
+            ]
+        expectedSample = Map.fromList
+          [ ("name1", ("help1", Map.singleton labelSet1 (Gauge 1)))
+          , ("name2", ("help2", Map.singleton labelSet2 (Gauge 2)))
+          ]
+
+    it "Register and deregister their metrics (smoke test)" $ do
+      store <- newStore
+
+      deregistrationHandle <-
+        registerRemovably store $
+          registerUncheckedDynamicGroup dynamicGroup (pure ())
+
+      sample1 <- sampleAll store
+      sample1 `shouldBe` expectedSample
+
+      deregistrationHandle
+
+      sample2 <- sampleAll store
+      sample2 `shouldBe` Map.empty

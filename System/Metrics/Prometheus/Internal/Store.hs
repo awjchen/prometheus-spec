@@ -61,6 +61,7 @@ module System.Metrics.Prometheus.Internal.Store
     , registerGauge
     , registerHistogram
     , registerGroup
+    , registerUncheckedDynamicGroup
 
       -- ** Validation
     , ValidationError (..)
@@ -87,6 +88,7 @@ import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import qualified Data.HashMap.Strict as HM
 import Data.List (foldl')
 import qualified Data.Map.Strict as M
+import Data.Maybe (maybeToList)
 import qualified Data.Text as T
 import Data.Text (Text)
 import Prelude hiding (read)
@@ -97,8 +99,13 @@ import System.Metrics.Prometheus.Gauge (Gauge)
 import qualified System.Metrics.Prometheus.Gauge as Gauge
 import System.Metrics.Prometheus.Histogram (Histogram, HistogramSample)
 import qualified System.Metrics.Prometheus.Histogram as Histogram
-import System.Metrics.Prometheus.Internal.State
-  hiding (deregister, register, registerGroup, sampleAll)
+import System.Metrics.Prometheus.Internal.State hiding
+  ( deregister
+  , register
+  , registerGroup
+  , registerUncheckedDynamicGroup
+  , sampleAll
+  )
 import qualified System.Metrics.Prometheus.Internal.State as Internal
 import System.Metrics.Prometheus.Validation
   ( isValidHelpText,
@@ -290,6 +297,18 @@ registerGroup !getters !cb =
                 Internal.registerGroup getters cb mutability state0
         pure (state1, (++) handles)
 
+registerUncheckedDynamicGroup
+    :: M.Map Name (Help, a -> M.Map Labels Value)
+        -- ^ Metric names and getter functions
+    -> IO a -- ^ Action to sample the metric group
+    -> Registration -- ^ Registration action
+registerUncheckedDynamicGroup !getters !cb =
+    Registration $ \_ state0 -> do
+        validateUncheckedDynamicGroupGetters getters
+        let (state1, maybeHandle) =
+              Internal.registerUncheckedDynamicGroup getters cb state0
+        pure (state1, (++) (maybeToList maybeHandle))
+
 ------------------------------------------------------------------------
 -- ** Validation
 
@@ -313,6 +332,13 @@ validateGroupGetters state mutability getters =
                 (HM.keys labelSet)
             let identifier = Identifier metricName labelSet
             checkIdentifierCollision mutability identifier state
+
+validateUncheckedDynamicGroupGetters
+    :: M.Map Name (Help, a) -> Either RegistrationError ()
+validateUncheckedDynamicGroupGetters getters =
+    for_ (M.toList getters) $ \(metricName, (help, _)) -> do
+        first ValidationError $ validateMetricName metricName
+        first ValidationError $ validateHelpText help
 
 validateMetricName :: Text -> Either ValidationError ()
 validateMetricName labelName =

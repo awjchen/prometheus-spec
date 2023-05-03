@@ -7,9 +7,10 @@ module State
 
 import Control.Applicative
 import Control.Arrow ((&&&))
-import Data.Foldable (asum, foldl')
+import Data.Foldable (asum, foldl', for_)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
+import Data.Maybe (fromJust)
 import qualified Data.Text as T
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Hspec
@@ -30,6 +31,7 @@ tests = do
   registerSmokeTests
   deregisterSmokeTests
   registerGroupSmokeTests
+  registerUncheckedDynamicGroupSmokeTests
   deregisterByHandleSmokeTests
 
 ------------------------------------------------------------------------
@@ -86,6 +88,15 @@ samplingGroups =
     )
     identifierGroups
 
+uncheckedSamplingGroups :: [M.Map Name (Help, () -> M.Map Labels Value)]
+uncheckedSamplingGroups =
+  (map . M.map . fmap) (const . M.map ($ ())) samplingGroups
+
+nonEmptyUncheckedSamplingGroups ::
+  [M.Map Name (Help, () -> M.Map Labels Value)]
+nonEmptyUncheckedSamplingGroups =
+  filter (not . M.null) uncheckedSamplingGroups
+
 -- ** State operation representation
 
 -- | A representation of all state operations, ignoring sampling
@@ -94,6 +105,8 @@ data TestStateOp
   = Register Identifier
   | RegisterGroup (M.Map Name (Help, M.Map Labels (() -> Value)))
   | Deregister Identifier
+  | RegisterUncheckedDynamicGroup
+      (M.Map Name (Help, () -> M.Map Labels Value))
 
 -- | Realize the state operations (using phony sampling actions).
 runTestStateOp :: TestStateOp -> State -> State
@@ -104,17 +117,22 @@ runTestStateOp op = case op of
     fst . registerGroup group (pure ()) Removable
   Deregister identifier ->
     deregister identifier
+  RegisterUncheckedDynamicGroup group ->
+    fst . registerUncheckedDynamicGroup group (pure ())
 
 instance Show TestStateOp where
   show (Register id') = "Register (" ++ show id' ++ ")"
   show (RegisterGroup idGroup) = "RegisterGroup " ++ show (M.keys idGroup)
   show (Deregister id') = "Deregister (" ++ show id' ++ ")"
+  show (RegisterUncheckedDynamicGroup idGroup) =
+    "RegisterUncheckedDynamicGroup " ++ show (M.keys idGroup)
 
 instance (Monad m) => SC.Serial m TestStateOp where
   series = asum
     [ Register <$> choose identifiers
     , RegisterGroup <$> choose samplingGroups
     , Deregister <$> choose identifiers
+    , RegisterUncheckedDynamicGroup <$> choose uncheckedSamplingGroups
     ]
     where
       choose :: (Alternative f) => [a] -> f a
@@ -124,9 +142,11 @@ instance QC.Arbitrary TestStateOp where
   -- | Frequencies are biased towards registration but are otherwise
   -- arbitrary
   arbitrary = QC.frequency
-    [ (2, Register <$> QC.elements identifiers)
-    , (1, RegisterGroup <$> QC.elements samplingGroups)
-    , (2, Deregister <$> QC.elements identifiers)
+    [ (4, Register <$> QC.elements identifiers)
+    , (2, RegisterGroup <$> QC.elements samplingGroups)
+    , (4, Deregister <$> QC.elements identifiers)
+    , (1, RegisterUncheckedDynamicGroup
+        <$> QC.elements uncheckedSamplingGroups)
     ]
 
 -- ** Random generation of `State`s through operations
@@ -302,6 +322,52 @@ prop_deregisterIdempotent ops =
   in  functionallyEqual sampledState1 sampledState2
 
 ------------------------------------------------------------------------
+-- * Unchecked dynamic groups
+
+registerUncheckedDynamicGroupSmokeTests :: Spec
+registerUncheckedDynamicGroupSmokeTests = do
+  describe "Unchecked dynamic groups" $ do
+    it "The registerUncheckedDynamicGroup operation works" $
+      QC.property prop_registerUncheckedDynamicGroupRegisters
+    it "The deregisterUncheckedDynamicGroup operation works" $
+      QC.property prop_deregisterUncheckedDynamicGroupDeregisters
+
+prop_registerUncheckedDynamicGroupRegisters :: [TestStateOp] -> Bool
+prop_registerUncheckedDynamicGroupRegisters ops =
+  let state0 = makeStateFromOps ops
+      Identifier name labelSet = head identifiers
+      valuesMap = M.singleton labelSet (Gauge 99)
+      dynamicGroup = M.singleton name ("", const valuesMap)
+      expectedSample = M.singleton name ("", valuesMap)
+      (state1, _handle1) =
+        registerUncheckedDynamicGroup
+          dynamicGroup
+          (pure ())
+          state0
+      sampledState1 = unsafePerformIO $ sampleState state1
+  in  expectedSample `elem`
+        sampledStateUncheckedDynamicGroups sampledState1
+
+prop_deregisterUncheckedDynamicGroupDeregisters :: [TestStateOp] -> Bool
+prop_deregisterUncheckedDynamicGroupDeregisters ops =
+  let state0 = makeStateFromOps ops
+      Identifier name labelSet = head identifiers
+      valuesMap = M.singleton labelSet (Gauge 99)
+      dynamicGroup = M.singleton name ("", const valuesMap)
+      (state1, maybeHandle1) =
+        registerUncheckedDynamicGroup
+          dynamicGroup
+          (pure ())
+          state0
+      state2 =
+        deregisterUncheckedDynamicGroup
+          (unsafeGetHandleVersion (fromJust maybeHandle1))
+          state1
+      sampledState0 = unsafePerformIO $ sampleState state0
+      sampledState2 = unsafePerformIO $ sampleState state2
+  in  functionallyEqual sampledState0 sampledState2
+
+------------------------------------------------------------------------
 -- * Deregister by handle
 
 deregisterByHandleSmokeTests :: Spec
@@ -309,6 +375,8 @@ deregisterByHandleSmokeTests =
   describe "Deregistration by a handle" $ do
     it "removes the intended metric" $
       QC.property prop_handleDeregisters
+    it "removes unchecked dynamic groups" $
+      QC.property prop_uncheckedHandleDeregisters
     it "has no effect if the metric is already deregistered" $
       QC.property prop_handleSpecificity
 
@@ -321,6 +389,19 @@ prop_handleDeregisters ops =
       sampledState2 = unsafePerformIO $ sampleState state2
       Identifier name1 labels1 = identifier1
   in  not $ Sample.member name1 labels1 $ sampledStateMetrics sampledState2
+
+prop_uncheckedHandleDeregisters :: [TestStateOp] -> Bool
+prop_uncheckedHandleDeregisters ops =
+  let state0 = makeStateFromOps ops
+      (state1, handleMaybe1) =
+        registerUncheckedDynamicGroup
+          (head nonEmptyUncheckedSamplingGroups)
+          (pure ())
+          state0
+      state2 = deregisterByHandle (fromJust handleMaybe1) state1
+      sampledState0 = unsafePerformIO $ sampleState state0
+      sampledState2 = unsafePerformIO $ sampleState state2
+  in  functionallyEqual sampledState0 sampledState2
 
 prop_handleSpecificity :: [TestStateOp] -> Bool
 prop_handleSpecificity ops =
