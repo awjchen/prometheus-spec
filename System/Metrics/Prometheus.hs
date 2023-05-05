@@ -81,6 +81,9 @@ module System.Metrics.Prometheus
   , createCounter
   , createGauge
   , createHistogram
+  , createCounterVector
+  , createGaugeVector
+  , createHistogramVector
 
     -- * Sampling metrics
     -- $sampling
@@ -109,12 +112,18 @@ import GHC.Generics
 import qualified GHC.Stats as Stats
 import GHC.TypeLits
 import qualified System.Metrics.Prometheus.Counter as Counter
+import qualified System.Metrics.Prometheus.CounterVector as CounterVector
+import System.Metrics.Prometheus.CounterVector (CounterVector)
 import qualified System.Metrics.Prometheus.Gauge as Gauge
 import System.Metrics.Prometheus.Histogram (HistogramSample)
 import qualified System.Metrics.Prometheus.Histogram as Histogram
 import qualified System.Metrics.Prometheus.Internal.Sample as Sample
 import qualified System.Metrics.Prometheus.Internal.Store as Internal
 import System.Metrics.Prometheus.Internal.Store (RegistrationError)
+import System.Metrics.Prometheus.GaugeVector (GaugeVector)
+import qualified System.Metrics.Prometheus.GaugeVector as GaugeVector
+import qualified System.Metrics.Prometheus.HistogramVector as HistogramVector
+import System.Metrics.Prometheus.HistogramVector (HistogramVector)
 
 -- $overview
 -- Metrics are used to monitor program behavior and performance. All
@@ -797,6 +806,71 @@ createGeneric f _ labels (Store store) =
       identifier = Internal.Identifier name (toLabels labels)
       help = T.pack $ symbolVal (Proxy @help)
   in  f identifier help store
+
+-- | Create a new, empty dynamic group of counters and permanently register it.
+--
+-- Can throw 'RegistrationError' exceptions.
+createCounterVector
+  :: forall metrics name help labels.
+      (KnownSymbol name, KnownSymbol help, ToLabels labels, Ord labels)
+  => metrics name help 'CounterType labels -- ^ Metric class
+  -> Store metrics -- ^ Metric store
+  -> (Map labels Double -> [(labels, Double)])
+  -- ^ A function for transforming sampled metrics. Use `Map.toList` to specify a no-op transformation.
+  -> IO (CounterVector labels)
+createCounterVector metricConstructor store f = do
+  counterVector <- CounterVector.new
+  registerPermanently store $
+    let group =
+          UncheckedDynamicSamplingGroup ::> (metricConstructor, f)
+     in registerUncheckedDynamicGroup
+          group
+          (CounterVector.read counterVector)
+  pure counterVector
+
+-- | Create an empty dynamic group of gauges and permanently register it.
+--
+-- Can throw 'RegistrationError' exceptions.
+createGaugeVector
+  :: forall metrics name help labels.
+      (KnownSymbol name, KnownSymbol help, ToLabels labels, Ord labels)
+  => metrics name help 'GaugeType labels -- ^ Metric class
+  -> Store metrics -- ^ Metric store
+  -> (Map labels Double -> [(labels, Double)])
+  -- ^ A function for transforming sampled metrics. Use `Map.toList` to specify a no-op transformation.
+  -> IO (GaugeVector labels)
+createGaugeVector metricConstructor store f = do
+  gaugeVector <- GaugeVector.new
+  registerPermanently store $
+    let group =
+          UncheckedDynamicSamplingGroup ::> (metricConstructor, f)
+     in registerUncheckedDynamicGroup
+          group
+          (GaugeVector.read gaugeVector)
+  pure gaugeVector
+
+-- | Create an empty dynamic group of histograms and permanently register it. The buckets of
+-- the histogram are fixed and defined by the given upper bounds.
+--
+-- Can throw 'RegistrationError' exceptions.
+createHistogramVector
+  :: forall metrics name help labels.
+      (KnownSymbol name, KnownSymbol help, ToLabels labels, Ord labels)
+  => [Histogram.UpperBound] -- ^ Upper bounds of buckets
+  -> metrics name help 'HistogramType labels -- ^ Metric class
+  -> Store metrics -- ^ Metric store
+  -> (Map labels HistogramSample -> [(labels, HistogramSample)])
+  -- ^ A function for transforming sampled metrics. Use `Map.toList` to specify a no-op transformation.
+  -> IO (HistogramVector labels)
+createHistogramVector upperBounds metricConstructor store f = do
+  histogramVector <- HistogramVector.new upperBounds
+  registerPermanently store $
+    let group =
+          UncheckedDynamicSamplingGroup ::> (metricConstructor, f)
+     in registerUncheckedDynamicGroup
+          group
+          (HistogramVector.read histogramVector)
+  pure histogramVector
 
 ------------------------------------------------------------------------
 -- * Sampling metrics

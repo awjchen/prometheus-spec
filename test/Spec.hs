@@ -7,6 +7,7 @@ import qualified Export
 import qualified State
 import qualified Store
 import qualified Validation
+import qualified VectorMetrics
 
 main :: IO ()
 main = hspec $ do
@@ -15,3 +16,4 @@ main = hspec $ do
   Counter.tests
   Export.tests
   Validation.tests
+  VectorMetrics.tests

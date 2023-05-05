@@ -36,9 +36,12 @@ library
   exposed-modules:
     System.Metrics.Prometheus
     System.Metrics.Prometheus.Counter
+    System.Metrics.Prometheus.CounterVector
     System.Metrics.Prometheus.Export
     System.Metrics.Prometheus.Gauge
+    System.Metrics.Prometheus.GaugeVector
     System.Metrics.Prometheus.Histogram
+    System.Metrics.Prometheus.HistogramVector
     System.Metrics.Prometheus.Internal.Map2
     System.Metrics.Prometheus.Internal.Sample
     System.Metrics.Prometheus.Internal.State
@@ -52,6 +55,7 @@ library
     System.Metrics.Prometheus.GroupExample
     System.Metrics.Prometheus.SimpleExample
     System.Metrics.Prometheus.ThreadId
+    System.Metrics.Prometheus.MetricVector
 
 library ekg-prometheus-benchmark
   import: common-all
@@ -85,6 +89,7 @@ test-suite ekg-prometheus-test
     State
     Store
     Validation
+    VectorMetrics
   build-depends:
     base,
     ekg-prometheus,
