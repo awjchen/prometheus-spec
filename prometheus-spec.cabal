@@ -1,20 +1,19 @@
 cabal-version:       2.2
-name:                ekg-prometheus
+name:                prometheus-spec
 version:             0.3.0.0
 synopsis:            Tracking of system metrics
 description:
   This library lets you defined and track system metrics.
-homepage:            https://github.com/tibbe/ekg-core
-bug-reports:         https://github.com/tibbe/ekg-core/issues
+homepage:            https://github.com/awjchen/prometheus-spec
+bug-reports:         https://github.com/awjchen/prometheus-spec/issues
 license:             BSD-3-Clause
 license-file:        LICENSE
-author:              Johan Tibell
-maintainer:          Johan Tibell <johan.tibell@gmail.com>,
-                     Mikhail Glushenkov <mikhail.glushenkov@gmail.com>
+author:              Johan Tibell, Alex Chen
+maintainer:          Alex Chen <awchen@fastmail.com>
 category:            System
 build-type:          Simple
 extra-source-files:  CHANGES.md
-tested-with:         GHC == 9.2.5, GHC == 8.10.7
+tested-with:         GHC == 9.2.8
 
 common common-all
   ghc-options:
@@ -33,6 +32,7 @@ common library-build-depends
 
 library
   import: common-all, library-build-depends
+
   exposed-modules:
     System.Metrics.Prometheus
     System.Metrics.Prometheus.Counter
@@ -57,14 +57,14 @@ library
     System.Metrics.Prometheus.ThreadId
     System.Metrics.Prometheus.MetricVector
 
-library ekg-prometheus-benchmark
+library prometheus-spec-benchmark
   import: common-all
   hs-source-dirs: benchmark-lib
   exposed-modules:
     Tasks
   build-depends:
     base,
-    ekg-prometheus
+    prometheus-spec
 
 benchmark counter
   import: common-all
@@ -72,13 +72,13 @@ benchmark counter
   type: exitcode-stdio-1.0
   build-depends:
     base,
-    ekg-prometheus,
-    ekg-prometheus-benchmark,
+    prometheus-spec,
+    prometheus-spec-benchmark,
     criterion ^>= 1.5.9.0
   hs-source-dirs: benchmark-exe
   ghc-options: -O2 -threaded
 
-test-suite ekg-prometheus-test
+test-suite prometheus-spec-test
   import: common-all
   type: exitcode-stdio-1.0
   hs-source-dirs: test
@@ -92,8 +92,8 @@ test-suite ekg-prometheus-test
     VectorMetrics
   build-depends:
     base,
-    ekg-prometheus,
-    ekg-prometheus-benchmark,
+    prometheus-spec,
+    prometheus-spec-benchmark,
     async ^>= 2.2.1,
     bytestring,
     containers,
@@ -107,13 +107,13 @@ test-suite ekg-prometheus-test
     unordered-containers
   ghc-options: -O2 -threaded -with-rtsopts=-N
 
-test-suite ekg-prometheus-tutorial
+test-suite prometheus-spec-tutorial
   import: common-all, library-build-depends
   type: exitcode-stdio-1.0
   main-is: Tutorial.lhs
   build-depends:
-    ekg-prometheus,
-    ekg-prometheus-benchmark,
+    prometheus-spec,
+    prometheus-spec-benchmark,
     markdown-unlit
   ghc-options:
     -pgmL markdown-unlit
@@ -123,4 +123,4 @@ test-suite ekg-prometheus-tutorial
 
 source-repository head
   type:     git
-  location: https://github.com/tibbe/ekg-core.git
+  location: https://github.com/awjchen/prometheus-spec.git
